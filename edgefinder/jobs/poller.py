@@ -44,8 +44,25 @@ def tick(service: RefreshService) -> list[tuple[str, str]]:
     return done
 
 
+def nightly_history(service: RefreshService) -> None:
+    """Reload historical results (new final scores feed the Elo ratings)."""
+    from edgefinder.history import loader
+
+    for sport in loader.LOADERS:
+        try:
+            n = loader.load(service.store, sport)
+            log.info("nightly history %s: %d games", sport, n)
+        except Exception:
+            log.exception("nightly history load failed for %s", sport)
+
+
 def _add_job(sched, service: RefreshService) -> None:
     sched.add_job(tick, "interval", seconds=60, args=[service], max_instances=1, coalesce=True, id="edgefinder-poll")
+    # 05:07 US/Eastern daily, after the night's games are final.
+    sched.add_job(
+        nightly_history, "cron", hour=5, minute=7, timezone="America/New_York", args=[service],
+        max_instances=1, coalesce=True, id="edgefinder-history",
+    )
 
 
 def run_blocking(service: RefreshService) -> None:

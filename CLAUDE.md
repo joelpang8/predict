@@ -47,7 +47,13 @@ committed.
   budget, never computes from stale or skewed data, keeps last good results)
 - `edgefinder/jobs/poller.py`: APScheduler poller (faster near kickoff)
 - `edgefinder/paper/ledger.py`: paper bets, settlement (finalized only), stats/CLV
-- `edgefinder/cli.py`: `python -m edgefinder series|markets|refresh|show|poll|paper`
+- `edgefinder/history/`: nflverse loader (nflreadpy; team codes mapped to
+  Kalshi's, relocated franchises merged) and `loader.load` (CLI + nightly job)
+- `edgefinder/models/`: Elo (`elo.py`), evaluation/tuning (`evaluate.py`),
+  `ModelService` (Kalshi game -> one schedule row, else no estimate)
+- Model results and limits: `docs/model.md`. Elo is a cross-check, not a
+  pick source: the closing market beats it out of sample.
+- `edgefinder/cli.py`: `python -m edgefinder series|markets|refresh|show|poll|paper|history|model`
 - `tests/`: pytest; `tests/fixtures/` holds recorded live Kalshi responses
 - `docs/api-verification.md`: source-of-truth log for external APIs
 

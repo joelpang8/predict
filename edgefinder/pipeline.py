@@ -75,10 +75,14 @@ def fetch_odds(sport: str, odds: OddsApiClient) -> OddsPull:
     return OddsPull(events, fetched, odds.usage.last_cost or 0, odds.usage.remaining)
 
 
-def compute(sport: str, kp: KalshiPull, op: OddsPull, settings: Settings, now: datetime | None = None) -> ComputeResult:
+def compute(
+    sport: str, kp: KalshiPull, op: OddsPull, settings: Settings, now: datetime | None = None, model=None
+) -> ComputeResult:
+    """`model`: object with .probs(games) -> {event_ticker: ModelProb | reason}, or None."""
     res = ComputeResult(sport, odds_events=len(op.events))
     games = build_games(sport, kp.markets, res.report)
     res.kalshi_games = len(games)
+    model_probs = model.probs(games) if model else {}
     match_games(sport, games, op.events, res.report)
     now = now or datetime.now(timezone.utc)
     for m in res.report.matches:
@@ -86,7 +90,9 @@ def compute(sport: str, kp: KalshiPull, op: OddsPull, settings: Settings, now: d
         if fp is None or fp.fee_type not in QUADRATIC_FEE_TYPES:
             res.skips.append(Skip(m.game.event_ticker, f"fee schedule unknown for this event ({fp})"))
             continue
-        out = compute_edges(m, fp, kp.books, kp.fetched_at, op.fetched_at, now, settings)
+        out = compute_edges(
+            m, fp, kp.books, kp.fetched_at, op.fetched_at, now, settings, model_probs.get(m.game.event_ticker)
+        )
         if isinstance(out, Skip):
             res.skips.append(out)
         else:

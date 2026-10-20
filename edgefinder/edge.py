@@ -54,6 +54,8 @@ class EdgeRow:
     book_spread: float
     kalshi_fetched: datetime
     odds_fetched: datetime
+    model_fair: float | None = None  # independent Elo estimate for this side
+    model_note: str | None = None
 
     @property
     def label(self) -> str:
@@ -127,6 +129,7 @@ def compute_edges(
     odds_fetched: datetime,
     now: datetime,
     s: Settings,
+    model=None,  # ModelProb, a reason string, or None
 ) -> list[EdgeRow] | Skip:
     if match.event.commence_time <= now:
         return Skip(match.game.event_ticker, "game has started")
@@ -150,6 +153,11 @@ def compute_edges(
             if ask is None:
                 continue
             fee_pc, n, stake = _size_and_fee(fair, ask, depth, fees, s)
+            if hasattr(model, "probs"):
+                mp = model.probs[team] if side == "YES" else 1 - model.probs[team]
+                mnote = model.note
+            else:
+                mp, mnote = None, model if isinstance(model, str) else None
             net = fair - float(ask) - float(fee_pc)
             rows.append(
                 EdgeRow(
@@ -174,6 +182,8 @@ def compute_edges(
                     book_spread=cons.spread,
                     kalshi_fetched=kalshi_fetched,
                     odds_fetched=odds_fetched,
+                    model_fair=mp,
+                    model_note=mnote,
                 )
             )
     return rows

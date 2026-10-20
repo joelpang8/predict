@@ -74,7 +74,9 @@ CREATE TABLE IF NOT EXISTS edge_rows (
     books            TEXT NOT NULL,            -- comma-separated
     book_spread      REAL NOT NULL,
     kalshi_fetched   TEXT NOT NULL,
-    odds_fetched     TEXT NOT NULL
+    odds_fetched     TEXT NOT NULL,
+    model_fair       REAL,                     -- Elo estimate for this side (NULL if unavailable)
+    model_note       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_edges_run ON edge_rows (run_id);
 
@@ -108,3 +110,29 @@ CREATE TABLE IF NOT EXISTS paper_bets (
     closing_ask      TEXT,                    -- last Kalshi ask for our side before kickoff
     notes            TEXT
 );
+
+-- Historical games (nflverse etc.), team codes normalised to Kalshi's.
+CREATE TABLE IF NOT EXISTS history_games (
+    sport         TEXT NOT NULL,
+    game_id       TEXT NOT NULL,
+    season        INTEGER NOT NULL,
+    game_type     TEXT,
+    week          INTEGER,
+    gameday       TEXT NOT NULL,             -- US/Eastern date
+    kickoff_utc   TEXT,
+    home          TEXT NOT NULL,
+    away          TEXT NOT NULL,
+    home_score    INTEGER,
+    away_score    INTEGER,
+    neutral       INTEGER NOT NULL DEFAULT 0,
+    home_rest     INTEGER,
+    away_rest     INTEGER,
+    home_ml       REAL,
+    away_ml       REAL,
+    spread_line   REAL,
+    home_starter  TEXT,
+    away_starter  TEXT,
+    loaded_at     TEXT NOT NULL,
+    PRIMARY KEY (sport, game_id)
+);
+CREATE INDEX IF NOT EXISTS ix_hist_day ON history_games (sport, gameday);

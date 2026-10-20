@@ -3,4 +3,5 @@ python-dotenv>=1.0
 pandas>=2.2
 tabulate>=0.9
 APScheduler>=3.10,<4
+nflreadpy>=0.1.5
 pytest>=8

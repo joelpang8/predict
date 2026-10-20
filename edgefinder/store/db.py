@@ -38,6 +38,15 @@ class Store:
             pathlib.Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.conn() as c:
             c.executescript(SCHEMA.read_text())
+            self._migrate(c)
+
+    @staticmethod
+    def _migrate(c) -> None:
+        """Additive column migrations for databases created by earlier phases."""
+        cols = {r[1] for r in c.execute("PRAGMA table_info(edge_rows)")}
+        if "model_fair" not in cols:
+            c.execute("ALTER TABLE edge_rows ADD COLUMN model_fair REAL")
+            c.execute("ALTER TABLE edge_rows ADD COLUMN model_note TEXT")
 
     @contextmanager
     def conn(self):
@@ -157,12 +166,12 @@ class Store:
                 run_id, r.sport, r.event_ticker, r.market_ticker, r.team, r.opponent, r.side, r.label, iso(r.kickoff),
                 str(r.ask), _s(r.ask_depth), r.fair, r.gross_edge, str(r.fee_per_contract), r.fee.fee_type,
                 str(r.fee.multiplier), r.net_edge, r.ev_per_dollar, str(r.contracts), str(r.stake), ",".join(r.books),
-                r.book_spread, iso(r.kalshi_fetched), iso(r.odds_fetched),
+                r.book_spread, iso(r.kalshi_fetched), iso(r.odds_fetched), r.model_fair, r.model_note,
             )
             for r in rows
         ]
         with self.conn() as c:
-            c.executemany(f"INSERT INTO edge_rows VALUES ({','.join('?' * 24)})", data)
+            c.executemany(f"INSERT INTO edge_rows VALUES ({','.join('?' * 26)})", data)
             c.executemany("INSERT INTO unmatched VALUES (?, ?, ?, ?)", [(run_id, *u) for u in unmatched])
 
     def edge_rows(self, run_id: int) -> list[dict]:
@@ -191,6 +200,30 @@ class Store:
                 "(SELECT MAX(fetched_at) FROM odds_snapshots WHERE sport = ?)",
                 (sport, iso(now), sport),
             ).fetchone()
+        return parse_ts(r[0]) if r and r[0] else None
+
+    # -- history ---------------------------------------------------------------------
+
+    HISTORY_COLS = (
+        "sport", "game_id", "season", "game_type", "week", "gameday", "kickoff_utc", "home", "away", "home_score",
+        "away_score", "neutral", "home_rest", "away_rest", "home_ml", "away_ml", "spread_line", "home_starter",
+        "away_starter", "loaded_at",
+    )
+
+    def upsert_history(self, games: list[dict], loaded_at: datetime) -> int:
+        rows = [tuple({**g, "loaded_at": iso(loaded_at)}.get(c) for c in self.HISTORY_COLS) for g in games]
+        cols = ", ".join(self.HISTORY_COLS)
+        with self.conn() as c:
+            c.executemany(f"INSERT OR REPLACE INTO history_games ({cols}) VALUES ({','.join('?' * len(self.HISTORY_COLS))})", rows)
+        return len(rows)
+
+    def history(self, sport: str) -> list[dict]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM history_games WHERE sport = ? ORDER BY kickoff_utc, game_id", (sport,))]
+
+    def history_loaded_at(self, sport: str) -> datetime | None:
+        with self.conn() as c:
+            r = c.execute("SELECT MAX(loaded_at) FROM history_games WHERE sport = ?", (sport,)).fetchone()
         return parse_ts(r[0]) if r and r[0] else None
 
     # -- paper bets ---------------------------------------------------------------------

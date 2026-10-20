@@ -14,7 +14,7 @@ best-looking opportunities.
 | 1 | Kalshi client + NFL markets, terminal table | done; verified live 2026-10-20 |
 | 2 | Odds feed, de-vigging, edge/EV | done; verified live 2026-10-20 |
 | 3 | SQLite snapshots, refresh job + cooldown, paper-trade log | done; verified live 2026-10-20 |
-| 4 | Historical data + Elo (NFL first) | — |
+| 4 | Historical data + Elo (NFL first) | done; see docs/model.md |
 | 5 | Trending signals | — |
 | 6 | Streamlit dashboard, Refresh, Top Picks | — |
 | 7 | NBA + MLB, backtesting, CLV | — |
@@ -111,6 +111,20 @@ python -m edgefinder paper stats           # P&L, hit rate, CLV
 - **Paper bets** record the ask, fee, size and fair value at the time. They
   settle only when Kalshi marks the market `finalized` (a tie pays $0.50).
   CLV compares your price with the last stored Kalshi ask before kickoff.
+
+## Phase 4: history and the Elo model
+
+```bash
+python -m edgefinder history load --sport nfl   # nflverse results, 1999 to now (also nightly via poll)
+python -m edgefinder model ratings              # current Elo ratings
+python -m edgefinder model eval                 # out-of-sample log loss/calibration vs closing line
+python -m edgefinder model eval --tune --train 2015-2021 --test 2022-2025
+```
+
+`refresh` now adds a **model%** column: the Elo estimate for that side,
+next to the sportsbook consensus (**fair%**). The closing betting line is
+more accurate than Elo (log loss 0.608 vs 0.633 on 2022–2025), so model%
+is a cross-check, not a pick generator. See [`docs/model.md`](docs/model.md).
 
 ## Tests
 

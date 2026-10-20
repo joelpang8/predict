@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from edgefinder.config import Settings
+from edgefinder.models.service import ModelService
 from edgefinder.pipeline import OddsPull, compute, fetch_kalshi, fetch_odds
 from edgefinder.sources.kalshi import KalshiClient
 from edgefinder.sources.odds_api import OddsApiClient, expected_cost
@@ -180,7 +181,7 @@ class RefreshService:
         if kp and odds:
             skew = abs((kp.fetched_at - odds.fetched_at).total_seconds())
             if skew <= self.s.max_skew_s:
-                res = compute(sport, kp, odds, self.s, now=self.clock())
+                res = compute(sport, kp, odds, self.s, now=self.clock(), model=ModelService(self.store))
                 unmatched = [(u.source, u.key, u.reason) for u in res.report.unmatched]
                 unmatched += [("edge", sk.key, sk.reason) for sk in res.skips]
                 self.store.save_results(run_id, res.rows, unmatched)

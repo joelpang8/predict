@@ -73,9 +73,9 @@ class Settings:
     # Fees: $0.01 = non-direct (retail) balance precision, $0.0001 = direct member.
     fee_precision: Decimal = Decimal("0.01")
 
-    # Assumption, not data: chance an NFL game ends tied (Kalshi settles ties at
-    # $0.50; sportsbook moneylines refund them). Override in .env.
-    nfl_tie_prob: float = 0.003
+    # Chance an NFL game ends tied (Kalshi settles ties at $0.50; sportsbook
+    # moneylines refund them). nflverse results 2000-2026: 16 ties in 7,110 games.
+    nfl_tie_prob: float = 0.0023
 
     # Freshness: never compute an edge from data older than this, or from two
     # sources fetched further apart than max_skew_s.
@@ -122,7 +122,7 @@ def load_settings(env_file: str | None = ".env") -> Settings:
         odds_min_remaining=int(g("ODDS_MIN_REMAINING", "20")),
         min_books=int(g("MIN_BOOKS", "3")),
         fee_precision=Decimal(g("FEE_PRECISION", "0.01")),
-        nfl_tie_prob=float(g("NFL_TIE_PROB", "0.003")),
+        nfl_tie_prob=float(g("NFL_TIE_PROB", "0.0023")),
         max_data_age_s=int(g("MAX_DATA_AGE_S", "300")),
         max_skew_s=int(g("MAX_SKEW_S", "120")),
         bankroll=Decimal(g("BANKROLL", "1000")),

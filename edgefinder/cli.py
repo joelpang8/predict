@@ -7,6 +7,8 @@
     python -m edgefinder poll                      # background poller (Ctrl-C to stop)
     python -m edgefinder paper add TICKER YES|NO [--contracts N]
     python -m edgefinder paper list | settle | stats
+    python -m edgefinder history load --sport nfl  # nflverse schedules/results into SQLite
+    python -m edgefinder model ratings | eval [--tune] --sport nfl
 """
 
 from __future__ import annotations
@@ -140,6 +142,7 @@ def edge_table(rows: list[dict]) -> pd.DataFrame:
                 "fair%": f"{r['fair'] * 100:.1f}",
                 "edge pts": f"{r['gross_edge'] * 100:+.1f}",
                 "fee¢/ct": cents(Decimal(r["fee_per_contract"])),
+                "model%": f"{r['model_fair'] * 100:.1f}" if r.get("model_fair") is not None else "-",
                 "net pts": f"{r['net_edge'] * 100:+.1f}",
                 "EV/$": f"{r['ev_per_dollar'] * 100:+.1f}%",
                 "ask qty": num(Decimal(r["ask_depth"])) if r["ask_depth"] else "-",
@@ -245,6 +248,50 @@ def cmd_paper(args, settings) -> int:
     return 0
 
 
+def cmd_history(args, settings) -> int:
+    from edgefinder.history import loader
+
+    n = loader.load(Store(settings.db_path), args.sport)
+    print(f"Loaded {n} {args.sport.upper()} games into {settings.db_path}")
+    return 0
+
+
+def _span(s: str) -> tuple[int, int]:
+    a, _, b = s.partition("-")
+    return int(a), int(b or a)
+
+
+def cmd_model(args, settings) -> int:
+    from edgefinder.models import evaluate
+    from edgefinder.models.elo import run
+    from edgefinder.models.service import PARAMS
+
+    store = Store(settings.db_path)
+    games = store.history(args.sport)
+    if not games:
+        print("No history loaded. Run: python -m edgefinder history load --sport nfl", file=sys.stderr)
+        return 1
+    params = PARAMS[args.sport]
+    if args.model_cmd == "ratings":
+        st = run(games, params)
+        rows = sorted(st.ratings.items(), key=lambda kv: -kv[1])
+        print(f"Elo after {len(st.history)} games (season {st.season}); {params}")
+        print(pd.DataFrame([{"rank": i + 1, "team": t, "elo": round(r)} for i, (t, r) in enumerate(rows)]).to_markdown(index=False))
+        return 0
+    train, test = _span(args.train), _span(args.test)
+    if args.tune:
+        params, ll = evaluate.tune(games, *train, base=params)
+        print(f"Tuned on {train[0]}-{train[1]}: {params} (train log loss {ll:.4f})")
+    r = evaluate.evaluate(games, params, *test)
+    print(f"Out-of-sample {test[0]}-{test[1]}, {r.n} games")
+    print(f"  Elo log loss {r.model_log_loss:.4f} | Brier {r.model_brier:.4f} | home-rate baseline {r.base_rate_log_loss:.4f}")
+    if r.market_n:
+        print(f"  Closing moneyline (de-vigged) on {r.market_n} games: {r.market_log_loss:.4f} vs Elo {r.model_log_loss_on_market_games:.4f}"
+              " (lower is better)")
+    print(pd.DataFrame(r.calibration).round(3).to_markdown(index=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="edgefinder", description=DISCLAIMER)
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -283,6 +330,21 @@ def main(argv: list[str] | None = None) -> int:
     psub.add_parser("settle", help="Settle finalized markets from Kalshi results")
     psub.add_parser("stats", help="P&L, hit rate, CLV")
 
+    p = sub.add_parser("history", help="Historical data")
+    hsub = p.add_subparsers(dest="history_cmd", required=True)
+    hl = hsub.add_parser("load", help="Download nflverse schedules/results into SQLite")
+    hl.add_argument("--sport", choices=["nfl"], default="nfl")
+
+    p = sub.add_parser("model", help="Elo model")
+    msub = p.add_subparsers(dest="model_cmd", required=True)
+    mr = msub.add_parser("ratings")
+    mr.add_argument("--sport", choices=["nfl"], default="nfl")
+    me = msub.add_parser("eval", help="Out-of-sample log loss, Brier, calibration vs closing line")
+    me.add_argument("--sport", choices=["nfl"], default="nfl")
+    me.add_argument("--train", default="2015-2021")
+    me.add_argument("--test", default="2022-2025")
+    me.add_argument("--tune", action="store_true", help="Grid-search parameters on the training seasons first")
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     settings = load_settings()
@@ -290,7 +352,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd in ("series", "markets"):
             with KalshiClient(settings) as client:
                 return {"series": cmd_series, "markets": cmd_markets}[args.cmd](args, client)
-        handler = {"refresh": cmd_refresh, "edges": cmd_refresh, "show": cmd_show, "poll": cmd_poll, "paper": cmd_paper}
+        handler = {
+            "refresh": cmd_refresh, "edges": cmd_refresh, "show": cmd_show, "poll": cmd_poll, "paper": cmd_paper,
+            "history": cmd_history, "model": cmd_model,
+        }
         return handler[args.cmd](args, settings)
     except KalshiError as e:
         print(f"Kalshi request failed: {e}", file=sys.stderr)

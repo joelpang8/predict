@@ -69,3 +69,12 @@ Source: Kalshi Fee Schedule PDF, "Last updated and effective: July 7, 2026"
 | Sharp books | Pinnacle = `pinnacle`, region `eu` ("odds are from public website which may incur a delay"). Circa is not listed. US region has `lowvig`, `betonlineag`, `draftkings`, `fanduel`. |
 | Live check | Done 2026-10-20: 1 credit per NFL pull (`x-requests-last: 1`). All 14 odds events matched a Kalshi game; every team name in the feed was recognised. |
 | Budget | `bookmakers=` with ≤10 books (Pinnacle plus US books) costs 1 credit per sport per refresh. 500/month is about 16 per day across all sports, so the refresh cooldown alone won't protect the quota; phase 2 needs a credit budget. |
+
+## nflverse (phase 4; checked 2026-10-20)
+
+| Item | Finding |
+|---|---|
+| Package | `nfl_data_py` 0.3.3 (last release 2024-09) requires pandas<2 and numpy<2, so it can't be used here. Using `nflreadpy` 0.1.5, nflverse's maintained Python reader (`load_schedules` downloads nflverse-data `schedules/games`). |
+| Fields | From the nflreadr schedules data dictionary: `gametime` is 24h US/Eastern regardless of venue; `location` is Home/Neutral; `result` = home − away; `*_rest` = days of rest; `*_moneyline` = closing odds (coverage 2006+). |
+| Team codes | nflverse `JAX, LA, STL, SD, OAK` map to Kalshi `JAC, LAR, LAR, LAC, LV`. Every 2026 team maps to one of Kalshi's 32 codes. |
+| Ties | 16 ties in 7,110 games since 2000, which sets `NFL_TIE_PROB=0.0023`. |

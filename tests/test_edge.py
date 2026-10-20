@@ -182,3 +182,16 @@ def test_odds_client_refuses_to_dip_into_reserve():
 def test_odds_client_requires_key():
     with pytest.raises(OddsApiError):
         OddsApiClient("")
+
+
+def test_model_estimate_carried_on_both_sides():
+    from edgefinder.models.service import ModelProb
+
+    m = make_match([book("pinnacle", -150, 130), book("draftkings", -150, 130)])
+    mp = ModelProb({"CHI": 0.62, "NE": 0.38}, "g", 7, "QBs: a @ b")
+    rows = {(r.team, r.side): r for r in compute_edges(m, FEES, {}, NOW, NOW, NOW, S, mp)}
+    assert rows[("CHI", "YES")].model_fair == pytest.approx(0.62)
+    assert rows[("CHI", "NO")].model_fair == pytest.approx(0.38)
+    assert rows[("NE", "YES")].model_note == "QBs: a @ b"
+    no_model = {(r.team, r.side): r for r in compute_edges(m, FEES, {}, NOW, NOW, NOW, S, "no history loaded")}
+    assert no_model[("CHI", "YES")].model_fair is None and no_model[("CHI", "YES")].model_note == "no history loaded"
