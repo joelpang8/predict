@@ -36,7 +36,7 @@ committed.
   discovery
 - `edgefinder/sources/kalshi_models.py`: `KalshiMarket`, `Orderbook` parsing
 - `edgefinder/cli.py`: `python -m edgefinder series|markets`
-- `tests/`: pytest; payloads follow the official spec shape
+- `tests/`: pytest; `tests/fixtures/` holds recorded live Kalshi responses
 - `docs/api-verification.md`: source-of-truth log for external APIs
 
 Build order and status are in `README.md`. Stop after each phase for review.

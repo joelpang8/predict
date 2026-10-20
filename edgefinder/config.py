@@ -31,8 +31,8 @@ def _series_list(raw: str | None) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class Settings:
     kalshi_base_url: str
-    # Self-imposed ceiling; Kalshi's rate-limit page was not verified (see docs/api-verification.md).
-    kalshi_max_rps: float = 5.0
+    # Self-imposed: unauthenticated limits are undocumented (see docs/api-verification.md).
+    kalshi_max_rps: float = 2.0
     kalshi_timeout_s: float = 15.0
     kalshi_max_retries: int = 4
     # Explicit series tickers per sport; empty means auto-discover.
@@ -49,7 +49,7 @@ def load_settings(env_file: str | None = ".env") -> Settings:
     base = os.getenv("KALSHI_BASE_URL") or KALSHI_HOSTS[env]
     return Settings(
         kalshi_base_url=base.rstrip("/"),
-        kalshi_max_rps=float(os.getenv("KALSHI_MAX_RPS", "5")),
+        kalshi_max_rps=float(os.getenv("KALSHI_MAX_RPS", "2")),
         kalshi_series={s: _series_list(os.getenv(f"KALSHI_SERIES_{s.upper()}")) for s in SPORTS},
         odds_api_key=os.getenv("ODDS_API_KEY", ""),
     )

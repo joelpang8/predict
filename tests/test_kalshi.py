@@ -251,3 +251,26 @@ def test_source_has_no_order_or_write_calls():
                 raise AssertionError(f"{path}: .{node.attr} is not allowed (read-only app)")
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 assert not node.value.startswith(banned_paths), f"{path}: {node.value}"
+
+
+# -- recorded live responses (tests/fixtures, recorded 2026-10-20) ------------------
+
+FIXTURES = pathlib.Path(__file__).parent / "fixtures"
+
+
+def test_recorded_markets_parse():
+    import json
+
+    data = json.loads((FIXTURES / "kalshi_markets_kxnflgame.json").read_text())
+    markets = [KalshiMarket.from_api(m) for m in data["markets"]]
+    assert markets and all(m.event_ticker.startswith("KXNFLGAME-") for m in markets)
+    assert all(m.yes_ask is None or Decimal(0) < m.yes_ask < 1 for m in markets)
+
+
+def test_recorded_orderbook_implied_asks_match_market_quote():
+    import json
+
+    m = KalshiMarket.from_api(json.loads((FIXTURES / "kalshi_markets_kxnflgame.json").read_text())["markets"][0])
+    book = Orderbook.from_api(m.ticker, json.loads((FIXTURES / "kalshi_orderbook.json").read_text())["orderbook_fp"])
+    assert book.yes_ask()[0] == m.yes_ask
+    assert book.no_ask()[0] == m.no_ask

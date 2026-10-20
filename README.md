@@ -11,7 +11,7 @@ best-looking opportunities.
 
 | Phase | Scope | State |
 |---|---|---|
-| 1 | Kalshi client + NFL markets, terminal table | built; not yet run live (see below) |
+| 1 | Kalshi client + NFL markets, terminal table | done; verified live 2026-10-20 |
 | 2 | Odds feed, de-vigging, edge/EV | blocked on the official fee schedule |
 | 3 | SQLite snapshots, refresh job + cooldown, paper-trade log | — |
 | 4 | Historical data + Elo (NFL first) | — |
@@ -41,13 +41,12 @@ Set `KALSHI_ENV=demo` to use Kalshi's demo environment.
 # 1. Find the NFL series tickers (titles, fee type and fee multiplier shown)
 python -m edgefinder series --sport nfl
 
-# 2. Put the game-winner series in .env, e.g. KALSHI_SERIES_NFL=<TICKER>
-#    (or pass --series on the command line)
+# 2. The NFL game-winner series is KXNFLGAME (already set in .env.example)
 
 # 3. Show open markets: YES/NO bid and ask (¢), spread, depth at the ask,
 #    24h volume, open interest
 python -m edgefinder markets --sport nfl
-python -m edgefinder markets --sport nfl --series <TICKER> --limit 20
+python -m edgefinder markets --sport nfl --limit 20
 python -m edgefinder markets --sport nfl --no-book   # skip orderbook calls
 ```
 
