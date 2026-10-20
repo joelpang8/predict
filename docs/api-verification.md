@@ -66,5 +66,5 @@ Source: Kalshi Fee Schedule PDF, "Last updated and effective: July 7, 2026"
 | Rate limit | 429 on bursts; "space out requests over several seconds". |
 | Sport keys | `americanfootball_nfl`, `basketball_nba`, `baseball_mlb`. |
 | Sharp books | Pinnacle = `pinnacle`, region `eu` ("odds are from public website which may incur a delay"). Circa is not listed. US region has `lowvig`, `betonlineag`, `draftkings`, `fanduel`. |
-| Live check | **Pending an API key.** Parsing is tested on the docs' example response shape only. |
+| Live check | Done 2026-10-20: 1 credit per NFL pull (`x-requests-last: 1`). All 14 odds events matched a Kalshi game; every team name in the feed was recognised. |
 | Budget | `bookmakers=` with ≤10 books (Pinnacle plus US books) costs 1 credit per sport per refresh. 500/month is about 16 per day across all sports, so the refresh cooldown alone won't protect the quota; phase 2 needs a credit budget. |

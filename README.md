@@ -12,7 +12,7 @@ best-looking opportunities.
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Kalshi client + NFL markets, terminal table | done; verified live 2026-10-20 |
-| 2 | Odds feed, de-vigging, edge/EV | built; needs an Odds API key for a live run |
+| 2 | Odds feed, de-vigging, edge/EV | done; verified live 2026-10-20 |
 | 3 | SQLite snapshots, refresh job + cooldown, paper-trade log | — |
 | 4 | Historical data + Elo (NFL first) | — |
 | 5 | Trending signals | — |
