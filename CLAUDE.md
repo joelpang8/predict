@@ -54,6 +54,12 @@ committed.
 - `edgefinder/signals/trending.py`: line movement (own snapshots first, then
   candlesticks), volume trend, book imbalance, large trades, news/confirming
   flags. Context only: signals never create a pick.
+- `edgefinder/scoring.py`: guardrails (eligibility) + transparent weighted
+  score + penalties, dedupe (YES A = NO B), exposure caps, reason line,
+  "No good bets today" summary
+- `edgefinder/dashboard.py` (data helpers) and `ui/streamlit_app.py` (UI).
+  Chart colours are the validated dataviz slots 1–3, light and dark.
+- Settings tab overrides live in SQLite `app_settings` (`config.apply_overrides`).
 - Model results and limits: `docs/model.md`. Elo is a cross-check, not a
   pick source: the closing market beats it out of sample.
 - `edgefinder/cli.py`: `python -m edgefinder series|markets|refresh|show|poll|paper|history|model`

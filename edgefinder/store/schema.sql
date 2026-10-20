@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS edge_rows (
     kalshi_fetched   TEXT NOT NULL,
     odds_fetched     TEXT NOT NULL,
     model_fair       REAL,                     -- Elo estimate for this side (NULL if unavailable)
-    model_note       TEXT
+    model_note       TEXT,
+    spread           TEXT                      -- this side's ask - bid
 );
 CREATE INDEX IF NOT EXISTS ix_edges_run ON edge_rows (run_id);
 
@@ -153,3 +154,9 @@ CREATE TABLE IF NOT EXISTS signal_rows (
     flags           TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS ix_signals_run ON signal_rows (run_id);
+
+-- Dashboard Settings tab overrides (applied over .env values).
+CREATE TABLE IF NOT EXISTS app_settings (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
+);

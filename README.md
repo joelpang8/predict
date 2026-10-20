@@ -16,7 +16,7 @@ best-looking opportunities.
 | 3 | SQLite snapshots, refresh job + cooldown, paper-trade log | done; verified live 2026-10-20 |
 | 4 | Historical data + Elo (NFL first) | done; see docs/model.md |
 | 5 | Trending signals | done; verified live 2026-10-20 |
-| 6 | Streamlit dashboard, Refresh, Top Picks | — |
+| 6 | Streamlit dashboard, Refresh, Top Picks | done; verified live 2026-10-20 |
 | 7 | NBA + MLB, backtesting, CLV | — |
 
 What was checked against Kalshi's official sources is in
@@ -145,6 +145,41 @@ Thresholds are in `.env` (`SIGNAL_*`, `TRADES_TOP_N`, `LARGE_TRADE_USD`,
 limit is tight, so the client sends at most 1 request a second and a refresh
 takes about 20–30 s. If the signal calls fail, edges are still shown, with a
 warning.
+
+## Phase 6: dashboard and Top Picks
+
+```bash
+streamlit run ui/streamlit_app.py      # opens http://localhost:8501
+python -m edgefinder picks --sport nfl # same Top Picks in the terminal, no API calls
+```
+
+| Tab | What it shows |
+|---|---|
+| **Top Picks** | Ranked cards with a one-line reason, the score breakdown, suggested size and a **Log paper bet** button. Shows **No good bets today** with the reasons when nothing clears the guardrails. |
+| **All Markets** | Every side: Kalshi price, fair, Elo, net edge, EV, liquidity, trend, 6h move, size, Kalshi/odds age. Filters for sport, min edge, min liquidity. |
+| **Market Detail** | Price history (Kalshi ask from candles and our snapshots, with sportsbook fair and Elo per refresh), a table view, and each sportsbook's no-vig line vs the Kalshi ask. |
+| **Paper Trading** | P&L, hit rate, ROI, CLV vs the Kalshi close, settle button, bet list |
+| **Settings** | Bankroll, Kelly, per-bet cap, guardrails, exposure caps, ranking weights (saved in the local DB) |
+
+The sidebar has the **Refresh** button, which counts down its cooldown,
+along with the Kalshi and odds data ages, credits used today and the
+background poller switch. The disclaimer is always at the top.
+
+**How a pick is chosen** (`edgefinder/scoring.py`):
+1. **Guardrails**, all required: net edge ≥ 3 pts, ≥ $500 at the ask, spread
+   ≤ 3¢, data not stale, not within 30 min of kickoff unless the data is
+   under 90 s old, size > 0.
+2. **Score** = 0.40·edge + 0.20·model agreement + 0.15·liquidity +
+   0.10·line movement + 0.15·freshness, minus penalties (check for news,
+   few books, books disagreeing, no or opposing Elo, early season, starters
+   not listed). Each part is 0–1, and the breakdown is shown on every card.
+3. One pick per outcome (YES on A = NO on B) and one per game.
+4. Exposure caps: 10% of bankroll per day and 6% per sport, counting
+   today's open paper bets. A pick is trimmed or skipped when a cap is hit.
+5. Top 10.
+
+![Top Picks](docs/img/top-picks.png)
+![Market detail](docs/img/market-detail.png)
 
 ## Tests
 

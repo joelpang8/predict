@@ -47,6 +47,8 @@ class Store:
         if "model_fair" not in cols:
             c.execute("ALTER TABLE edge_rows ADD COLUMN model_fair REAL")
             c.execute("ALTER TABLE edge_rows ADD COLUMN model_note TEXT")
+        if "spread" not in cols:
+            c.execute("ALTER TABLE edge_rows ADD COLUMN spread TEXT")
 
     @contextmanager
     def conn(self):
@@ -166,12 +168,12 @@ class Store:
                 run_id, r.sport, r.event_ticker, r.market_ticker, r.team, r.opponent, r.side, r.label, iso(r.kickoff),
                 str(r.ask), _s(r.ask_depth), r.fair, r.gross_edge, str(r.fee_per_contract), r.fee.fee_type,
                 str(r.fee.multiplier), r.net_edge, r.ev_per_dollar, str(r.contracts), str(r.stake), ",".join(r.books),
-                r.book_spread, iso(r.kalshi_fetched), iso(r.odds_fetched), r.model_fair, r.model_note,
+                r.book_spread, iso(r.kalshi_fetched), iso(r.odds_fetched), r.model_fair, r.model_note, _s(r.spread),
             )
             for r in rows
         ]
         with self.conn() as c:
-            c.executemany(f"INSERT INTO edge_rows VALUES ({','.join('?' * 26)})", data)
+            c.executemany(f"INSERT INTO edge_rows VALUES ({','.join('?' * 27)})", data)
             c.executemany("INSERT INTO unmatched VALUES (?, ?, ?, ?)", [(run_id, *u) for u in unmatched])
 
     def edge_rows(self, run_id: int) -> list[dict]:
@@ -241,6 +243,54 @@ class Store:
                 (sport, iso(now), sport),
             ).fetchone()
         return parse_ts(r[0]) if r and r[0] else None
+
+    # -- market detail ---------------------------------------------------------------
+
+    def ask_history(self, ticker: str, side: str, since: datetime) -> list[tuple[datetime, Decimal]]:
+        col = "yes_ask" if side == "YES" else "no_ask"
+        with self.conn() as c:
+            rows = c.execute(
+                f"SELECT fetched_at, {col} FROM kalshi_snapshots WHERE ticker = ? AND fetched_at >= ? AND {col} IS NOT NULL "
+                "ORDER BY fetched_at",
+                (ticker, iso(since)),
+            ).fetchall()
+        return [(parse_ts(t), Decimal(v)) for t, v in rows]
+
+    def fair_history(self, ticker: str, side: str, since: datetime) -> list[tuple[datetime, float, float | None]]:
+        """(odds time, sportsbook fair, model) for this side across refreshes."""
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT DISTINCT odds_fetched, fair, model_fair FROM edge_rows WHERE market_ticker = ? AND side = ? "
+                "AND odds_fetched >= ? ORDER BY odds_fetched",
+                (ticker, side, iso(since)),
+            ).fetchall()
+        return [(parse_ts(t), f, m) for t, f, m in rows]
+
+    def book_lines(self, sport: str, odds_fetched: datetime, kickoff: datetime) -> list[dict]:
+        """Per-book prices for the game with this kickoff in one odds pull."""
+        with self.conn() as c:
+            return [
+                dict(r)
+                for r in c.execute(
+                    "SELECT book, book_update, outcome, price, home_team, away_team FROM odds_snapshots "
+                    "WHERE sport = ? AND fetched_at = ? AND commence_time = ? ORDER BY book",
+                    (sport, iso(odds_fetched), iso(kickoff)),
+                )
+            ]
+
+    # -- settings overrides ----------------------------------------------------------
+
+    def get_overrides(self) -> dict[str, str]:
+        with self.conn() as c:
+            return {r[0]: r[1] for r in c.execute("SELECT key, value FROM app_settings")}
+
+    def set_overrides(self, values: dict[str, str]) -> None:
+        with self.conn() as c:
+            c.executemany("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", [(k, str(v)) for k, v in values.items()])
+
+    def clear_overrides(self) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM app_settings")
 
     # -- history ---------------------------------------------------------------------
 

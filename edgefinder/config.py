@@ -112,6 +112,39 @@ class Settings:
     confirm_move_pts: float = 3.0
     trend_flag_x: float = 5.0
 
+    # Guardrails: a row must pass all of these to be a pick (self-imposed defaults)
+    min_net_edge_pts: float = 3.0
+    min_liquidity_usd: Decimal = Decimal("500")  # $ available at the quoted ask
+    max_spread_cents: float = 3.0
+    near_start_min: int = 30  # within this many minutes of kickoff...
+    near_start_max_age_s: int = 90  # ...only if the data is this fresh
+    max_daily_exposure_pct: float = 0.10  # of bankroll, picks + today's open paper bets
+    max_sport_exposure_pct: float = 0.06
+    top_n: int = 10
+
+    # Ranking weights (score = sum of weight x component in 0..1, minus penalties)
+    w_edge: float = 0.40
+    w_model: float = 0.20
+    w_liquidity: float = 0.15
+    w_movement: float = 0.10
+    w_freshness: float = 0.15
+    edge_full_pts: float = 10.0  # net edge that earns the full edge component
+    liquidity_full_usd: Decimal = Decimal("5000")
+    p_news: float = 0.30
+    p_few_books: float = 0.10
+    p_book_disagree: float = 0.10
+    p_no_model: float = 0.10
+    p_model_against: float = 0.15
+    p_early_season: float = 0.05
+    p_no_starters: float = 0.05
+
+
+RANKING_DEFAULTS = {
+    k: v
+    for k, v in Settings.__dataclass_fields__.items()
+    if k.startswith(("min_net", "min_liq", "max_spread", "near_start", "max_daily", "max_sport", "top_n", "w_", "p_", "edge_full", "liquidity_full"))
+}
+
 
 def load_settings(env_file: str | None = ".env") -> Settings:
     if env_file:
@@ -151,4 +184,30 @@ def load_settings(env_file: str | None = ".env") -> Settings:
         news_move_pts=float(g("NEWS_MOVE_PTS", "5")),
         confirm_move_pts=float(g("CONFIRM_MOVE_PTS", "3")),
         trend_flag_x=float(g("TREND_FLAG_X", "5")),
+        **{k: _env_value(k, f.default) for k, f in RANKING_DEFAULTS.items() if g(k.upper()) is not None},
     )
+
+
+def _env_value(name: str, default):
+    raw = os.getenv(name.upper())
+    return type(default)(raw) if not isinstance(default, Decimal) else Decimal(raw)
+
+
+# Settings the dashboard's Settings tab may change (persisted in SQLite, see apply_overrides).
+EDITABLE = (
+    "bankroll", "kelly_multiplier", "max_bet_pct", "min_net_edge_pts", "min_liquidity_usd", "max_spread_cents",
+    "near_start_min", "near_start_max_age_s", "max_daily_exposure_pct", "max_sport_exposure_pct", "top_n",
+    "max_data_age_s", "w_edge", "w_model", "w_liquidity", "w_movement", "w_freshness",
+)
+
+
+def apply_overrides(settings: Settings, overrides: dict[str, str]) -> Settings:
+    """Settings with dashboard overrides applied (typed like the defaults)."""
+    from dataclasses import replace
+
+    typed = {}
+    for k, v in overrides.items():
+        if k in EDITABLE:
+            cur = getattr(settings, k)
+            typed[k] = Decimal(v) if isinstance(cur, Decimal) else type(cur)(float(v)) if isinstance(cur, int) else type(cur)(v)
+    return replace(settings, **typed)

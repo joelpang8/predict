@@ -4,6 +4,7 @@
     python -m edgefinder markets --sport nfl [--series KX...] [--no-book] [--limit 50]
     python -m edgefinder refresh --sport nfl [--min-edge 3] [--limit 20]   (alias: edges)
     python -m edgefinder show --sport nfl          # cached results, no API calls
+    python -m edgefinder picks --sport nfl         # Top Picks with reasons, no API calls
     python -m edgefinder poll                      # background poller (Ctrl-C to stop)
     python -m edgefinder paper add TICKER YES|NO [--contracts N]
     python -m edgefinder paper list | settle | stats
@@ -209,6 +210,27 @@ def cmd_show(args, settings) -> int:
     return 0
 
 
+def cmd_picks(args, settings) -> int:
+    from edgefinder.config import apply_overrides
+    from edgefinder.scoring import rank
+
+    store = Store(settings.db_path)
+    settings = apply_overrides(settings, store.get_overrides())
+    v = RefreshService(settings, store).view(args.sport)
+    r = rank(v.rows, settings, datetime.now(timezone.utc), stale=v.stale, open_bets=store.paper_bets(status="open"))
+    print(DISCLAIMER)
+    for w in v.warnings:
+        print(f"WARNING: {w}")
+    if not r.picks:
+        print(r.summary)
+        return 0
+    for i, p in enumerate(r.picks, 1):
+        print(f"#{i} [{p.score * 100:.0f}] {p.row['label']} - {p.row['side']} {p.row['market_ticker']}: "
+              f"{p.contracts:.0f} contracts (${p.stake:.2f})")
+        print(f"    {p.reason}")
+    return 0
+
+
 def cmd_poll(args, settings) -> int:
     print(DISCLAIMER)
     print("Polling (Ctrl-C to stop). Kalshi every "
@@ -330,6 +352,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--limit", type=int, default=0)
 
     sub.add_parser("poll", help="Run the background poller in the foreground")
+    p = sub.add_parser("picks", help="Top picks from the last results (no API calls)")
+    p.add_argument("--sport", choices=["nfl"], default="nfl")
 
     p = sub.add_parser("paper", help="Paper trading log")
     psub = p.add_subparsers(dest="paper_cmd", required=True)
@@ -367,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
                 return {"series": cmd_series, "markets": cmd_markets}[args.cmd](args, client)
         handler = {
             "refresh": cmd_refresh, "edges": cmd_refresh, "show": cmd_show, "poll": cmd_poll, "paper": cmd_paper,
-            "history": cmd_history, "model": cmd_model,
+            "history": cmd_history, "model": cmd_model, "picks": cmd_picks,
         }
         return handler[args.cmd](args, settings)
     except KalshiError as e:

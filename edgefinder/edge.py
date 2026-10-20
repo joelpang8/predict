@@ -56,6 +56,7 @@ class EdgeRow:
     odds_fetched: datetime
     model_fair: float | None = None  # independent Elo estimate for this side
     model_note: str | None = None
+    spread: Decimal | None = None  # this side's ask - bid
 
     @property
     def label(self) -> str:
@@ -103,7 +104,7 @@ def freshness_problem(kalshi_fetched: datetime, odds_fetched: datetime, now: dat
     return None
 
 
-def _size_and_fee(fair: float, ask: Decimal, depth: Decimal | None, fees: FeeParams, s: Settings) -> tuple[Decimal, Decimal, Decimal]:
+def size_and_fee(fair: float, ask: Decimal, depth: Decimal | None, fees: FeeParams, s: Settings) -> tuple[Decimal, Decimal, Decimal]:
     """(fee per contract, contracts, stake). Fee depends on size and size on fee, so iterate."""
     kw = dict(multiplier=fees.multiplier, fee_type=fees.fee_type, precision=s.fee_precision)
     fee_pc = taker_fee_per_contract(ask, Decimal(1), **kw)  # worst case: a single contract
@@ -146,13 +147,13 @@ def compute_edges(
     for team, m in match.game.markets.items():
         opp = next(c for c in codes if c != team)
         book = books.get(m.ticker)
-        for side, ask, depth, fair in (
-            ("YES", m.yes_ask, book.yes_ask()[1] if book and book.yes_ask() else None, fair_yes[team]),
-            ("NO", m.no_ask, book.no_ask()[1] if book and book.no_ask() else None, 1 - fair_yes[team]),
+        for side, ask, bid, depth, fair in (
+            ("YES", m.yes_ask, m.yes_bid, book.yes_ask()[1] if book and book.yes_ask() else None, fair_yes[team]),
+            ("NO", m.no_ask, m.no_bid, book.no_ask()[1] if book and book.no_ask() else None, 1 - fair_yes[team]),
         ):
             if ask is None:
                 continue
-            fee_pc, n, stake = _size_and_fee(fair, ask, depth, fees, s)
+            fee_pc, n, stake = size_and_fee(fair, ask, depth, fees, s)
             if hasattr(model, "probs"):
                 mp = model.probs[team] if side == "YES" else 1 - model.probs[team]
                 mnote = model.note
@@ -184,6 +185,7 @@ def compute_edges(
                     odds_fetched=odds_fetched,
                     model_fair=mp,
                     model_note=mnote,
+                    spread=ask - bid if bid is not None else None,
                 )
             )
     return rows
