@@ -49,10 +49,10 @@ def _code(name: str) -> str:
 # -- Basketball-Reference ------------------------------------------------------------------
 
 
-def parse_bbref_month(page: str, season: int) -> list[dict]:
-    """Rows of a /leagues/NBA_<season>_games-<month>.html page."""
+def parse_bbref_month(page: str, season: int, playoffs: bool = False) -> list[dict]:
+    """Rows of a /leagues/NBA_<season>_games-<month>.html page. `playoffs` = an
+    earlier month already reached the "Playoffs" divider (May/June pages have none)."""
     out = []
-    playoffs = False
     for row in re.findall(r"<tr[^>]*>(.*?)</tr>", page, re.S):
         if "Playoffs" in row and "data-stat" not in row.replace("data-stat=\"date_game\"", ""):
             playoffs = True
@@ -77,8 +77,27 @@ def parse_bbref_month(page: str, season: int) -> list[dict]:
             "home_score": int(hs) if hs else None, "away_score": int(as_) if as_ else None,
             "neutral": 0, "home_ml": None, "away_ml": None, "spread_line": None,
             "home_starter": None, "away_starter": None,
+            "_play_in": cells.get("game_remarks", "").lower().startswith("play-in"),
         })
     return out
+
+
+def mark_postseason(games: list[dict]) -> list[dict]:
+    """Since 2020 Basketball-Reference has no "Playoffs" divider; the postseason starts
+    with the first "Play-In Game". Mark it and everything after it in that season POST."""
+    by_season: dict[int, list[dict]] = {}
+    for g in games:
+        by_season.setdefault(g["season"], []).append(g)
+    for rows in by_season.values():
+        starts = [g["gameday"] for g in rows if g.pop("_play_in", False)]
+        if starts:
+            cutoff = min(starts)
+            for g in rows:
+                if g["gameday"] >= cutoff:
+                    g["game_type"] = "POST"
+    for g in games:
+        g.pop("_play_in", None)
+    return games
 
 
 def download_bbref(seasons: list[int], client: httpx.Client | None = None, delay: float = BBREF_DELAY_S) -> list[dict]:
@@ -91,6 +110,7 @@ def download_bbref(seasons: list[int], client: httpx.Client | None = None, delay
             if first.status_code == 404:
                 continue
             first.raise_for_status()
+            in_playoffs = False
             months = list(dict.fromkeys(re.findall(rf'href="(/leagues/NBA_{season}_games-[a-z]+\.html)"', first.text)))
             for path in months or [f"/leagues/NBA_{season}_games.html"]:
                 time.sleep(delay)
@@ -98,12 +118,14 @@ def download_bbref(seasons: list[int], client: httpx.Client | None = None, delay
                 if r.status_code == 404:
                     continue
                 r.raise_for_status()
-                games.extend(parse_bbref_month(r.text, season))
+                month = parse_bbref_month(r.text, season, in_playoffs)
+                in_playoffs = in_playoffs or any(g["game_type"] == "POST" for g in month)
+                games.extend(month)
             time.sleep(delay)
     finally:
         if own:
             client.close()
-    return add_rest_days(games)
+    return add_rest_days(mark_postseason(games))
 
 
 # -- nba_api ---------------------------------------------------------------------------------

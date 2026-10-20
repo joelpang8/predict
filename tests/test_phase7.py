@@ -272,3 +272,20 @@ def test_clv_from_last_odds_pull_before_kickoff(store):
     assert row.clv_pts == pytest.approx((row.closing_fair - 0.45) * 100) and row.closing_fair == pytest.approx(0.5799, abs=0.002)
     assert row.line_move_pts > 7
     assert backtest.clv_report(store, s, kick - timedelta(hours=1)).pending == 1  # before kickoff: no close yet
+
+
+def test_bbref_playoffs_carry_into_later_months():
+    page = (FIX / "bbref_nba_2026_october.html").read_text()
+    assert all(r["game_type"] == "POST" for r in nba.parse_bbref_month(page, 2026, playoffs=True))
+
+
+def test_postseason_starts_at_first_play_in():
+    rows = [
+        {"season": 2025, "gameday": "2025-04-13", "game_type": "REG", "_play_in": False},
+        {"season": 2025, "gameday": "2025-04-15", "game_type": "REG", "_play_in": True},
+        {"season": 2025, "gameday": "2025-05-01", "game_type": "REG", "_play_in": False},
+        {"season": 2019, "gameday": "2019-05-01", "game_type": "REG", "_play_in": False},
+    ]
+    out = nba.mark_postseason(rows)
+    assert [r["game_type"] for r in out] == ["REG", "POST", "POST", "REG"]
+    assert all("_play_in" not in r for r in out)
