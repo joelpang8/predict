@@ -219,7 +219,7 @@ def test_model_picks_doubleheader_game_by_start(store):
     games = build_games("mlb", dh_markets(), MatchReport())
     out = ModelService(store).probs(games)
     g1 = out["KXMLBGAME-26SEP041410DETCLEG1"]
-    assert isinstance(g1, ModelProb) and g1.game_id == "824424" and g1.note.startswith("SPs:")
+    assert isinstance(g1, ModelProb) and g1.game_id == "824424" and "SPs: " in g1.note
     assert out["KXMLBGAME-26SEP041915DETCLEG2"].game_id == "824387"
 
 
@@ -234,6 +234,7 @@ def test_nba_game_without_schedule_row_uses_odds_event(store):
     event = OddsEvent("o1", "basketball_nba", datetime(2026, 10, 20, 23, 30, tzinfo=UTC), "Boston Celtics", "New York Knicks", ())
     mp = ModelService(store).probs(games, {ev: event})[ev]
     assert isinstance(mp, ModelProb) and mp.probs["BOS"] > 0.5 and "from the odds feed" in mp.note
+    assert "early season" in mp.note
     assert ModelService(store).probs(games)[ev].startswith("0 schedule rows")  # without the odds event: no guess
 
 

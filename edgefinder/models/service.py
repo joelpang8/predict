@@ -29,9 +29,11 @@ NFL_PARAMS = EloParams(k=20.0, hfa=35.0, bye_bonus=25.0, season_regress=0.4, pla
 MLB_PARAMS = EloParams(
     k=6.0, hfa=24.0, bye_bonus=0.0, season_regress=1 / 3, playoff_mult=1.0, mov="none", pitcher_k=4.0, pitcher_weight=1.0
 )
-NBA_PARAMS = EloParams(k=20.0, hfa=100.0, bye_bonus=0.0, season_regress=0.25, playoff_mult=1.0, mov="nba", b2b_penalty=25.0)
+NBA_PARAMS = EloParams(k=20.0, hfa=70.0, bye_bonus=0.0, season_regress=0.25, playoff_mult=1.0, mov="nba", b2b_penalty=50.0)
 PARAMS = {"nfl": NFL_PARAMS, "nba": NBA_PARAMS, "mlb": MLB_PARAMS}
 START_TOLERANCE_S = 20 * 60
+# Below this many games played this season by either team, ratings are mostly last season's.
+EARLY_SEASON_GAMES = {"nba": 10, "mlb": 15}
 
 
 class ModelService:
@@ -70,8 +72,12 @@ class ModelService:
             return {g.event_ticker: f"no history loaded (run: history load --sport {sport})" for g in games}
         state, hist = st
         by_day: dict[str, list[dict]] = {}
+        played: dict[tuple[int, str], list[str]] = {}
         for h in hist:
             by_day.setdefault(h["gameday"], []).append(h)
+            if h["home_score"] is not None:
+                for t in (h["home"], h["away"]):
+                    played.setdefault((h["season"], t), []).append(h["gameday"])
         for g in games:
             cands = [h for h in by_day.get(g.game_date.isoformat(), []) if {h["home"], h["away"]} == set(g.markets)]
             if g.start is not None and len(cands) > 1:  # doubleheader: pick by start time
@@ -92,6 +98,10 @@ class ModelService:
             notes = []
             if sport == "nfl" and h.get("week") is not None and h["week"] <= 2 and h.get("game_type") == "REG":
                 notes.append("early season: ratings mostly last year's")
+            if sport in EARLY_SEASON_GAMES:
+                n = min(sum(d < h["gameday"] for d in played.get((h["season"], t), [])) for t in (h["home"], h["away"]))
+                if n < EARLY_SEASON_GAMES[sport]:
+                    notes.append(f"early season: ratings mostly last year's ({n} games played)")
             if sport == "nfl":
                 starters = [x for x in (h.get("away_starter"), h.get("home_starter")) if x]
                 notes.append(f"QBs: {' @ '.join(starters)}" if len(starters) == 2 else "starting QBs not listed")

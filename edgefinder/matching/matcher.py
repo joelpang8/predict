@@ -41,10 +41,11 @@ _TICKER_RE = re.compile(
     r"^(?P<series>[A-Z0-9]+)-(?P<date>\d{2}[A-Z]{3}\d{2})(?P<time>\d{4})?(?P<teams>[A-Z]+?)(?:G(?P<game>\d))?$"
 )
 START_TOLERANCE = timedelta(minutes=20)
-# expected_expiration - kickoff, per sport (observed 3h for NFL and NBA; see docs/api-verification.md)
+# expected_expiration - kickoff, per sport. Observed: NFL 3h; NBA 3h on 47 of
+# 52 games, 3.5h once, 6h on opening night (see docs/api-verification.md).
 KICKOFF_WINDOWS = {
     "nfl": (timedelta(hours=2), timedelta(hours=5)),
-    "nba": (timedelta(hours=2), timedelta(hours=5)),
+    "nba": (timedelta(hours=2), timedelta(hours=7)),
     "mlb": (timedelta(hours=2), timedelta(hours=5)),
 }
 _RULES_DATE_RE = re.compile(r"originally scheduled for ([A-Z][a-z]{2}) (\d{1,2}), (\d{4})")
