@@ -136,3 +136,20 @@ CREATE TABLE IF NOT EXISTS history_games (
     PRIMARY KEY (sport, game_id)
 );
 CREATE INDEX IF NOT EXISTS ix_hist_day ON history_games (sport, gameday);
+
+-- Trend signals per edge row (context only).
+CREATE TABLE IF NOT EXISTS signal_rows (
+    run_id          INTEGER NOT NULL REFERENCES refresh_runs(id),
+    market_ticker   TEXT NOT NULL,
+    side            TEXT NOT NULL,
+    move_1h         REAL,
+    move_6h         REAL,
+    move_24h        REAL,
+    trend_score     REAL,
+    imbalance       REAL,
+    large_trades    INTEGER,
+    large_trade_max_usd TEXT,
+    large_trades_with INTEGER,
+    flags           TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS ix_signals_run ON signal_rows (run_id);

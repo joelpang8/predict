@@ -35,7 +35,7 @@ class Fakes:
         d = self.kick.astimezone(ET)
         self.event = f"KXNFLGAME-{d:%y}{d.strftime('%b').upper()}{d:%d}NECHI"
         self.calls = {"kalshi": 0, "odds": 0}
-        self.kalshi_down = self.odds_down = False
+        self.kalshi_down = self.odds_down = self.signals_down = False
         self.settled = {}  # ticker -> market overrides for GET /markets/{ticker}
 
     def market(self, code, title, yes, no):
@@ -66,6 +66,20 @@ class Fakes:
         if path == "/markets/orderbooks":
             obs = [{"ticker": t, "orderbook_fp": {"yes_dollars": [["0.47", "100"]], "no_dollars": [["0.50", "500"]]}} for t in req.url.params.get_list("tickers")]
             return httpx.Response(200, json={"orderbooks": obs})
+        if path == "/markets/candlesticks":
+            if self.signals_down:
+                return httpx.Response(400, text="bad candles")
+            end = int(datetime.now(UTC).timestamp()) // 3600 * 3600
+            cs = [
+                {"end_period_ts": end - h * 3600, "volume_fp": "100.00",
+                 "yes_ask": {"close_dollars": "0.50" if h < 2 else "0.58"}, "yes_bid": {"close_dollars": "0.49"}}
+                for h in range(30)
+            ]
+            return httpx.Response(200, json={"markets": [{"market_ticker": t, "candlesticks": cs} for t in req.url.params["market_tickers"].split(",")]})
+        if path == "/markets/trades":
+            t = {"created_time": iso(datetime.now(UTC) - timedelta(hours=1)), "count_fp": "10000.00", "yes_price_dollars": "0.5000",
+                 "taker_outcome_side": "no", "ticker": req.url.params["ticker"], "trade_id": "x"}
+            return httpx.Response(200, json={"trades": [t], "cursor": ""})
         if path.startswith("/markets/"):
             t = path.rsplit("/", 1)[1]
             return httpx.Response(200, json={"market": {**raw_market(t), **self.settled.get(t, {})}})
@@ -350,3 +364,25 @@ def test_stats_and_clv(env):
     assert st.pnl == D(10) * (1 - D("0.50") - D(store.paper_bets()[0]["fee_per_contract"]))
     # Closing ask = last stored snapshot before kickoff = 0.50, same as entry -> CLV 0
     assert st.clv_count == 1 and st.avg_clv_cents == pytest.approx(0.0)
+
+
+# -- trend signals through the refresh job ------------------------------------------------
+
+
+def test_refresh_attaches_signals_to_rows(env):
+    f, s, store, make, _ = env
+    v = make().refresh("nfl").view
+    chi_yes = next(r for r in v.rows if r["market_ticker"].endswith("-CHI") and r["side"] == "YES")
+    # YES ask 0.58 two+ hours ago, 0.50 now: fell 8 points against a side we rate underpriced.
+    assert chi_yes["move_6h"] == pytest.approx(-8)
+    assert chi_yes["large_trades"] == 1 and chi_yes["large_trades_with"] == 0
+    assert any(fl.startswith("check for news") for fl in chi_yes["flags"])
+
+
+def test_signal_failure_keeps_edges_and_warns(env):
+    f, s, store, make, _ = env
+    f.signals_down = True
+    out = make().refresh("nfl")
+    assert out.status == "ok" and len(out.view.rows) == 4
+    assert out.view.rows[0]["move_1h"] is None
+    assert any("Trend signals unavailable" in w for w in out.view.warnings)

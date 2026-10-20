@@ -14,6 +14,8 @@ docs/api-verification.md):
   GET /markets/{ticker}/orderbook    depth 0 = all levels
   GET /markets/orderbooks            up to 100 tickers, repeated `tickers=`
   GET /markets/trades                cursor; limit default 100, max 1000
+  GET /markets/candlesticks          <=100 tickers, <=10,000 candles per call;
+                                     period_interval 1, 60 or 1440 minutes
 An empty cursor in a response means no more pages.
 """
 
@@ -36,6 +38,8 @@ log = logging.getLogger(__name__)
 MARKETS_PAGE_MAX = 1000
 EVENTS_PAGE_MAX = 200
 ORDERBOOKS_BATCH_MAX = 100
+CANDLE_TICKERS_MAX = 100
+CANDLES_PER_CALL_MAX = 10_000
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 
@@ -167,6 +171,28 @@ class KalshiClient:
             for ob in data.get("orderbooks") or []:
                 out[ob["ticker"]] = Orderbook.from_api(ob["ticker"], ob.get("orderbook_fp"))
         return out
+
+    def get_candlesticks(self, tickers: list[str], start_ts: int, end_ts: int, period: int = 60) -> dict[str, list[dict]]:
+        """Batch candlesticks, chunked so each call stays under 100 tickers and 10,000 candles."""
+        per_market = max(1, (end_ts - start_ts) // (period * 60) + 2)
+        chunk = max(1, min(CANDLE_TICKERS_MAX, CANDLES_PER_CALL_MAX // per_market))
+        out: dict[str, list[dict]] = {}
+        for i in range(0, len(tickers), chunk):
+            data = self._get(
+                "/markets/candlesticks",
+                {"market_tickers": ",".join(tickers[i : i + chunk]), "start_ts": start_ts, "end_ts": end_ts, "period_interval": period},
+            )
+            for m in data.get("markets") or []:
+                out[m["market_ticker"]] = m.get("candlesticks") or []
+        return out
+
+    def get_trades(self, ticker: str, min_ts: int, max_pages: int = 5) -> list[dict]:
+        trades = []
+        for i, t in enumerate(self._paginate("/markets/trades", "trades", {"ticker": ticker, "min_ts": min_ts}, MARKETS_PAGE_MAX)):
+            trades.append(t)
+            if i + 1 >= MARKETS_PAGE_MAX * max_pages:
+                break
+        return trades
 
 
 # Words that identify a sport in a Kalshi series title/tags. Used only to

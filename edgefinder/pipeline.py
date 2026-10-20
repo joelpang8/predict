@@ -99,3 +99,46 @@ def compute(
             res.rows.extend(out)
     res.rows.sort(key=lambda r: r.net_edge, reverse=True)
     return res
+
+
+def fetch_signals(
+    kalshi: KalshiClient, kp: KalshiPull, rows: list[EdgeRow], settings: Settings, now: datetime, snapshot_ask_near=None
+) -> dict:
+    """(market_ticker, side) -> Signals for every row. One candlestick call for all
+    markets; recent trades only for the top `trades_top_n` markets by net edge."""
+    from edgefinder.signals.trending import Candle, SignalConfig, Trade
+    from edgefinder.signals.trending import compute as compute_signals
+
+    if not rows:
+        return {}
+    cfg = SignalConfig(
+        lookback_h=settings.signal_lookback_h,
+        large_trade_usd=settings.large_trade_usd,
+        news_move_pts=settings.news_move_pts,
+        confirm_move_pts=settings.confirm_move_pts,
+        trend_flag_x=settings.trend_flag_x,
+    )
+    tickers = sorted({r.market_ticker for r in rows})
+    end = int(now.timestamp())
+    raw = kalshi.get_candlesticks(tickers, end - settings.signal_lookback_h * 3600, end, 60)
+    candles = {t: [Candle.from_api(c) for c in cs] for t, cs in raw.items()}
+
+    top: list[str] = []
+    for r in rows:  # rows are sorted by net edge, best first
+        if r.market_ticker not in top:
+            top.append(r.market_ticker)
+        if len(top) >= settings.trades_top_n:
+            break
+    min_ts = end - 24 * 3600
+    trades = {t: [Trade.from_api(x) for x in kalshi.get_trades(t, min_ts)] for t in top}
+
+    out = {}
+    for r in rows:
+        lookup = None
+        if snapshot_ask_near:
+            lookup = lambda side, t, tol, tk=r.market_ticker: snapshot_ask_near(tk, side, t, tol)  # noqa: E731
+        out[(r.market_ticker, r.side)] = compute_signals(
+            r.side, r.ask, r.gross_edge, candles.get(r.market_ticker, []), kp.books.get(r.market_ticker),
+            trades.get(r.market_ticker), now, cfg, lookup,
+        )
+    return out

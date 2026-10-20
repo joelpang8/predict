@@ -55,8 +55,9 @@ def _weights(raw: str | None) -> dict[str, float]:
 @dataclass(frozen=True)
 class Settings:
     kalshi_base_url: str
-    # Self-imposed: unauthenticated limits are undocumented (see docs/api-verification.md).
-    kalshi_max_rps: float = 2.0
+    # Self-imposed: unauthenticated limits are undocumented and 429s were seen
+    # at 2 req/s (see docs/api-verification.md).
+    kalshi_max_rps: float = 1.0
     kalshi_timeout_s: float = 15.0
     kalshi_max_retries: int = 4
     # Explicit series tickers per sport; empty means auto-discover.
@@ -103,6 +104,14 @@ class Settings:
     poller_odds_interval_s: int = 10800
     poller_manual_reserve: int = 5
 
+    # Trend signals (context only)
+    signal_lookback_h: int = 72
+    trades_top_n: int = 6  # trades are one call per market, so only for the top candidates
+    large_trade_usd: Decimal = Decimal("2500")
+    news_move_pts: float = 5.0
+    confirm_move_pts: float = 3.0
+    trend_flag_x: float = 5.0
+
 
 def load_settings(env_file: str | None = ".env") -> Settings:
     if env_file:
@@ -114,7 +123,7 @@ def load_settings(env_file: str | None = ".env") -> Settings:
     base = g("KALSHI_BASE_URL") or KALSHI_HOSTS[env]
     return Settings(
         kalshi_base_url=base.rstrip("/"),
-        kalshi_max_rps=float(g("KALSHI_MAX_RPS", "2")),
+        kalshi_max_rps=float(g("KALSHI_MAX_RPS", "1")),
         kalshi_series={s: _series_list(g(f"KALSHI_SERIES_{s.upper()}")) for s in SPORTS},
         odds_api_key=g("ODDS_API_KEY", ""),
         odds_bookmakers=_csv(g("ODDS_BOOKMAKERS"), DEFAULT_BOOKMAKERS),
@@ -136,4 +145,10 @@ def load_settings(env_file: str | None = ".env") -> Settings:
         near_kickoff_h=float(g("NEAR_KICKOFF_H", "3")),
         poller_odds_interval_s=int(g("POLLER_ODDS_INTERVAL_S", "10800")),
         poller_manual_reserve=int(g("POLLER_MANUAL_RESERVE", "5")),
+        signal_lookback_h=int(g("SIGNAL_LOOKBACK_H", "72")),
+        trades_top_n=int(g("TRADES_TOP_N", "6")),
+        large_trade_usd=Decimal(g("LARGE_TRADE_USD", "2500")),
+        news_move_pts=float(g("NEWS_MOVE_PTS", "5")),
+        confirm_move_pts=float(g("CONFIRM_MOVE_PTS", "3")),
+        trend_flag_x=float(g("TREND_FLAG_X", "5")),
     )

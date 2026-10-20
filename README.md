@@ -15,7 +15,7 @@ best-looking opportunities.
 | 2 | Odds feed, de-vigging, edge/EV | done; verified live 2026-10-20 |
 | 3 | SQLite snapshots, refresh job + cooldown, paper-trade log | done; verified live 2026-10-20 |
 | 4 | Historical data + Elo (NFL first) | done; see docs/model.md |
-| 5 | Trending signals | — |
+| 5 | Trending signals | done; verified live 2026-10-20 |
 | 6 | Streamlit dashboard, Refresh, Top Picks | — |
 | 7 | NBA + MLB, backtesting, CLV | — |
 
@@ -125,6 +125,26 @@ python -m edgefinder model eval --tune --train 2015-2021 --test 2022-2025
 next to the sportsbook consensus (**fair%**). The closing betting line is
 more accurate than Elo (log loss 0.608 vs 0.633 on 2022–2025), so model%
 is a cross-check, not a pick generator. See [`docs/model.md`](docs/model.md).
+
+## Phase 5: trend signals (context, never picks)
+
+Kalshi doesn't publish anyone's positions, so these are public proxies. Each
+`refresh` adds them to every row:
+
+| Column / flag | Meaning | Source |
+|---|---|---|
+| **move 1h/6h/24h** | Change in this side's ask, in points. Positive means the market moved toward this side. | Our stored snapshots when one is close to the target time, otherwise Kalshi hourly candlesticks |
+| **vol x** | Volume in the last 3 h vs this market's normal 3 h over the last 72 h | Candlesticks |
+| **book** | Resting bids within 5¢ of the best, this side vs the other, from −1 to +1 | Orderbook |
+| large trades | Trades of $2,500+ in the last 24 h, and how many bought this side | Trades, for the top 6 rows by net edge |
+| **check for news** | A side we rate underpriced fell 5+ pts in 1 h or 6 h: the market may know something | |
+| **confirming** | This side rose 3+ pts with the book leaning its way | |
+
+Thresholds are in `.env` (`SIGNAL_*`, `TRADES_TOP_N`, `LARGE_TRADE_USD`,
+`NEWS_MOVE_PTS`, `CONFIRM_MOVE_PTS`, `TREND_FLAG_X`). Kalshi's public rate
+limit is tight, so the client sends at most 1 request a second and a refresh
+takes about 20–30 s. If the signal calls fail, edges are still shown, with a
+warning.
 
 ## Tests
 

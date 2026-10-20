@@ -128,6 +128,10 @@ def _t(ts: str | None) -> str:
     return parse_ts(ts).strftime("%H:%M:%S") if ts else "-"
 
 
+def _mv(x) -> str:
+    return "." if x is None else f"{x:+.0f}"
+
+
 def edge_table(rows: list[dict]) -> pd.DataFrame:
     out = []
     for r in rows:
@@ -148,6 +152,9 @@ def edge_table(rows: list[dict]) -> pd.DataFrame:
                 "ask qty": num(Decimal(r["ask_depth"])) if r["ask_depth"] else "-",
                 "size": f"{n:.0f} (${stake:.2f})" if n else "-",
                 "books": len(r["books"].split(",")),
+                "move 1h/6h/24h": "/".join(_mv(r.get(k)) for k in ("move_1h", "move_6h", "move_24h")),
+                "vol x": f"{r['trend_score']:.1f}" if r.get("trend_score") is not None else "-",
+                "book": f"{r['imbalance']:+.2f}" if r.get("imbalance") is not None else "-",
                 "updated K / odds (UTC)": f"{_t(r['kalshi_fetched'])} / {_t(r['odds_fetched'])}",
             }
         )
@@ -167,10 +174,16 @@ def print_view(v: View, min_edge: float | None = None, limit: int = 0) -> None:
         print(f"WARNING: {w}")
     print()
     rows = [r for r in v.rows if min_edge is None or r["net_edge"] * 100 >= min_edge]
+    rows = rows[:limit] if limit else rows
     if rows:
-        print(edge_table(rows[:limit] if limit else rows).to_markdown(index=False))
+        print(edge_table(rows).to_markdown(index=False))
     else:
         print("No rows to show.")
+    flagged = [r for r in rows if r.get("flags")]
+    if flagged:
+        print("\nSignals (context only, not picks):")
+        for r in flagged:
+            print(f"  - {r['side']} {r['market_ticker']} ({r['label']}): {'; '.join(r['flags'])}")
     if v.unmatched:
         print(f"\nSkipped {len(v.unmatched)}:")
         for u in v.unmatched:

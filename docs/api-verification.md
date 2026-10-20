@@ -28,6 +28,8 @@ Sources:
 | NFL game series | `KXNFLGAME` ("NFL Game"), `fee_type=quadratic_with_maker_fees`, `fee_multiplier=1`. One event per game (`KXNFLGAME-26OCT22NECHI`, `mutually_exclusive=true`), one market per team (`…-CHI`, `yes_sub_title` = team). |
 | Game time | **No kickoff field.** `occurrence_datetime` = `expected_expiration_time` (looks like kickoff + 3h; not documented). `rules_primary` gives the scheduled *date*; `close_time` is days later. Matching must not treat any of these as kickoff. |
 | Rate limits (authenticated) | Token buckets: most requests cost 10 tokens; Basic tier Read budget 200 tokens/s (20 req/s), 3 s burst. 429 body `{"error":"too many requests"}`. **429 has no `Retry-After` header**; the docs say to use exponential backoff. |
+| Candlesticks | `GET /markets/candlesticks`: `market_tickers` (≤100, comma-separated), `start_ts`, `end_ts`, `period_interval` 1/60/1440; ≤10,000 candles per call; no auth. Each candle has `end_period_ts`, `volume_fp`, `open_interest_fp`, `yes_ask`/`yes_bid`/`price` OHLC `*_dollars`. No NO-side fields, so NO ask = 1 − YES bid. Confirmed live. |
+| Trades | `GET /markets/trades?ticker&min_ts&limit≤1000&cursor`: `count_fp`, `yes_price_dollars`, `taker_outcome_side`, `created_time`, `is_block_trade`. Confirmed live. |
 | Market lifecycle | docs `market_lifecycle`: statuses `initialized, active, inactive, closed, determined, disputed, amended, finalized`; `result` is `yes`, `no` or `scalar`; only `finalized` is paid out. Paper bets settle on `finalized` only. NFL ties settle at $0.50 (`rules_secondary`). |
 
 ### Fees (verified 2026-10-20)
@@ -54,7 +56,7 @@ Source: Kalshi Fee Schedule PDF, "Last updated and effective: July 7, 2026"
 
 | Item | Status |
 |---|---|
-| Unauthenticated rate limit | Undocumented. Live: about 6 calls in ~2 s triggered a 429. The client defaults to 2 req/s and backs off exponentially (2, 4, 8, 16 s). |
+| Unauthenticated rate limit | Undocumented. Live: 429s even at 2 req/s, and occasionally at 1 req/s. The client defaults to 1 req/s and backs off exponentially (2, 4, 8, 16 s). |
 | NFL tie probability | `NFL_TIE_PROB=0.003` is an **assumption**, not sourced data. Kalshi settles ties at $0.50 (verified in `rules_secondary`); moneylines refund them. Effect on fair value is ≤0.15 pts at the extremes. |
 
 ## The Odds API (phase 2; read 2026-10-20 from the-odds-api.com/liveapi/guides/v4)

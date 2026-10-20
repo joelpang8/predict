@@ -175,8 +175,48 @@ class Store:
             c.executemany("INSERT INTO unmatched VALUES (?, ?, ?, ?)", [(run_id, *u) for u in unmatched])
 
     def edge_rows(self, run_id: int) -> list[dict]:
+        """Edge rows with their trend signals (if computed) joined in."""
         with self.conn() as c:
-            return [dict(r) for r in c.execute("SELECT * FROM edge_rows WHERE run_id = ? ORDER BY net_edge DESC", (run_id,))]
+            rows = [
+                dict(r)
+                for r in c.execute(
+                    "SELECT e.*, s.move_1h, s.move_6h, s.move_24h, s.trend_score, s.imbalance, s.large_trades, "
+                    "s.large_trade_max_usd, s.large_trades_with, s.flags "
+                    "FROM edge_rows e LEFT JOIN signal_rows s "
+                    "ON s.run_id = e.run_id AND s.market_ticker = e.market_ticker AND s.side = e.side "
+                    "WHERE e.run_id = ? ORDER BY e.net_edge DESC",
+                    (run_id,),
+                )
+            ]
+        for r in rows:
+            r["flags"] = json.loads(r["flags"]) if r.get("flags") else []
+        return rows
+
+    def save_signals(self, run_id: int, signals: dict) -> None:
+        rows = [
+            (
+                run_id, ticker, side, s.move_1h, s.move_6h, s.move_24h, s.trend_score, s.imbalance, s.large_trades,
+                _s(s.large_trade_max_usd), s.large_trades_with, json.dumps(s.flags),
+            )
+            for (ticker, side), s in signals.items()
+        ]
+        with self.conn() as c:
+            c.executemany(f"INSERT INTO signal_rows VALUES ({','.join('?' * 12)})", rows)
+
+    def snapshot_ask_near(self, ticker: str, side: str, t: datetime, tolerance) -> Decimal | None:
+        """Our own stored ask for a side closest to time t, within tolerance."""
+        col = "yes_ask" if side == "YES" else "no_ask"
+        lo, hi = iso(t - tolerance), iso(t + tolerance)
+        with self.conn() as c:
+            rows = c.execute(
+                f"SELECT fetched_at, {col} FROM kalshi_snapshots WHERE ticker = ? AND fetched_at BETWEEN ? AND ? "
+                f"AND {col} IS NOT NULL",
+                (ticker, lo, hi),
+            ).fetchall()
+        if not rows:
+            return None
+        best = min(rows, key=lambda r: abs((parse_ts(r[0]) - t).total_seconds()))
+        return Decimal(best[1])
 
     def unmatched(self, run_id: int) -> list[dict]:
         with self.conn() as c:

@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 from edgefinder.config import Settings
 from edgefinder.models.service import ModelService
-from edgefinder.pipeline import OddsPull, compute, fetch_kalshi, fetch_odds
+from edgefinder.pipeline import OddsPull, compute, fetch_kalshi, fetch_odds, fetch_signals
 from edgefinder.sources.kalshi import KalshiClient
 from edgefinder.sources.odds_api import OddsApiClient, expected_cost
 from edgefinder.store.db import Store, parse_ts
@@ -186,6 +186,13 @@ class RefreshService:
                 unmatched += [("edge", sk.key, sk.reason) for sk in res.skips]
                 self.store.save_results(run_id, res.rows, unmatched)
                 edges = True
+                try:
+                    with self.kalshi_factory() as k:
+                        sig = fetch_signals(k, kp, res.rows, self.s, self.clock(), self.store.snapshot_ask_near)
+                    self.store.save_signals(run_id, sig)
+                except Exception as e:  # signals are context; never block edges on them
+                    log.exception("signal fetch failed")
+                    warnings.append(f"Trend signals unavailable this refresh: {e}")
             else:
                 warnings.append(
                     f"Latest odds are {skew / 60:.0f} min older than Kalshi prices (max {self.s.max_skew_s}s apart); "
