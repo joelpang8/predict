@@ -12,7 +12,7 @@ best-looking opportunities.
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Kalshi client + NFL markets, terminal table | done; verified live 2026-10-20 |
-| 2 | Odds feed, de-vigging, edge/EV | blocked on the official fee schedule |
+| 2 | Odds feed, de-vigging, edge/EV | built; needs an Odds API key for a live run |
 | 3 | SQLite snapshots, refresh job + cooldown, paper-trade log | — |
 | 4 | Historical data + Elo (NFL first) | — |
 | 5 | Trending signals | — |
@@ -53,6 +53,31 @@ python -m edgefinder markets --sport nfl --no-book   # skip orderbook calls
 The implied probability of buying a side is that side's **ask**, not the last
 trade. Kalshi's orderbook lists bids only; a side's ask is 1 − the best
 opposite-side bid, and "ask qty" is the size there.
+
+## Phase 2: edges
+
+Put your key in `.env` as `ODDS_API_KEY`, then:
+
+```bash
+python -m edgefinder edges --sport nfl                 # costs 1 Odds API credit
+python -m edgefinder edges --sport nfl --min-edge 3    # only net edge >= 3 points
+```
+
+Every Kalshi game market is matched to one sportsbook game, and both sides
+(YES and NO) are priced:
+
+- **fair %**: weighted average of de-vigged moneylines (Pinnacle and Betfair
+  weighted higher), adjusted for Kalshi paying $0.50 on an NFL tie
+- **edge pts**: fair − ask
+- **fee ¢/ct**: Kalshi taker fee per contract at the suggested size
+- **net pts**: edge after the fee, which is also the EV per contract in dollars
+- **size**: quarter Kelly, capped at 2% of bankroll and at the quantity on
+  offer at the ask
+
+Games that can't be matched with certainty, have too few books, have
+stale data or have already started are skipped. The reason is printed and
+appended to `data/unmatched.jsonl`. Credits used and remaining are printed
+after every run.
 
 ## Tests
 

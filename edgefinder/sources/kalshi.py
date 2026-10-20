@@ -137,6 +137,9 @@ class KalshiClient:
         params = {k: v for k, v in {"category": category, "tags": tags}.items() if v}
         return self._get("/series", params).get("series") or []
 
+    def get_series(self, series_ticker: str) -> dict:
+        return self._get(f"/series/{series_ticker}").get("series") or {}
+
     def iter_events(self, series_ticker: str | None = None, status: str | None = None) -> Iterator[dict]:
         return self._paginate(
             "/events", "events", {"series_ticker": series_ticker, "status": status}, EVENTS_PAGE_MAX

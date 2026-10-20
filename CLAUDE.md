@@ -35,7 +35,13 @@ committed.
   429/5xx with Retry-After, cursor pagination, batch orderbooks), series
   discovery
 - `edgefinder/sources/kalshi_models.py`: `KalshiMarket`, `Orderbook` parsing
-- `edgefinder/cli.py`: `python -m edgefinder series|markets`
+- `edgefinder/fees.py`: Kalshi fee formula (single source of truth, cites the PDF)
+- `edgefinder/devig.py`, `edgefinder/sizing.py`, `edgefinder/edge.py`: de-vig
+  consensus, Kelly sizing, edge/EV per side
+- `edgefinder/sources/odds_api.py`: The Odds API client (h2h only; logs credits)
+- `edgefinder/matching/`: team table (exact aliases only) and the matcher
+- `edgefinder/pipeline.py`: one pull-and-compute pass (reused by the refresh job)
+- `edgefinder/cli.py`: `python -m edgefinder series|markets|edges`
 - `tests/`: pytest; `tests/fixtures/` holds recorded live Kalshi responses
 - `docs/api-verification.md`: source-of-truth log for external APIs
 

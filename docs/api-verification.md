@@ -29,12 +29,32 @@ Sources:
 | Game time | **No kickoff field.** `occurrence_datetime` = `expected_expiration_time` (looks like kickoff + 3h; not documented). `rules_primary` gives the scheduled *date*; `close_time` is days later. Matching must not treat any of these as kickoff. |
 | Rate limits (authenticated) | Token buckets: most requests cost 10 tokens; Basic tier Read budget 200 tokens/s (20 req/s), 3 s burst. 429 body `{"error":"too many requests"}`. **429 has no `Retry-After` header**; the docs say to use exponential backoff. |
 
+### Fees (verified 2026-10-20)
+
+Source: Kalshi Fee Schedule PDF, "Last updated and effective: July 7, 2026"
+(supplied by the user; kalshi.com blocks this environment's downloads).
+
+- Taker fee = `round up(M x 0.07 x C x P x (1-P))`; maker fee uses `0.0175`
+  (and M defaults to 0 for makers). "round up = rounds up such that the
+  fee + positionCost is rounded to a centicent".
+- Fee Rounding doc: trade fee rounded up to $0.000001, then a rounding fee to
+  the member's balance precision ($0.0001 direct, $0.01 non-direct), with
+  rebates across fills of one order.
+- `edgefinder/fees.py` reproduces **every row** of the PDF's General Trading
+  Fees Table (1 and 100 contracts, $0.01 to $0.99) with $0.01 precision
+  (`tests/test_fees.py`).
+- Non-Standard Fees table: `KXNFLGAME` and `KXMLBGAME` maker 1, taker 1.
+  Live `GET /series/KXNFLGAME`: `quadratic_with_maker_fees`, multiplier 1;
+  no event overrides on the 28 open games.
+- Fee types outside the quadratic family (e.g. `flat`) are not described in
+  the PDF; those markets are skipped.
+
 ### Not verified / open
 
 | Item | Status |
 |---|---|
-| **Fee formula** | **Blocking.** The only official source is the Fee Schedule (`kalshi.com/fee-schedule`, `kalshi.com/docs/kalshi-fee-schedule.pdf`). Both sit behind a Vercel bot check that rejects this environment (HTTP 429, "Code 21"). The help center just links to it. Known from official sources: fee type and multiplier per series, event overrides, trade fee rounded **up to $0.000001** (Fee Rounding doc), standard maker multiplier `0.25` (changelog). The formula itself is not implemented. |
 | Unauthenticated rate limit | Undocumented. Live: about 6 calls in ~2 s triggered a 429. The client defaults to 2 req/s and backs off exponentially (2, 4, 8, 16 s). |
+| NFL tie probability | `NFL_TIE_PROB=0.003` is an **assumption**, not sourced data. Kalshi settles ties at $0.50 (verified in `rules_secondary`); moneylines refund them. Effect on fair value is ≤0.15 pts at the extremes. |
 
 ## The Odds API (phase 2; read 2026-10-20 from the-odds-api.com/liveapi/guides/v4)
 
@@ -46,4 +66,5 @@ Sources:
 | Rate limit | 429 on bursts; "space out requests over several seconds". |
 | Sport keys | `americanfootball_nfl`, `basketball_nba`, `baseball_mlb`. |
 | Sharp books | Pinnacle = `pinnacle`, region `eu` ("odds are from public website which may incur a delay"). Circa is not listed. US region has `lowvig`, `betonlineag`, `draftkings`, `fanduel`. |
+| Live check | **Pending an API key.** Parsing is tested on the docs' example response shape only. |
 | Budget | `bookmakers=` with ≤10 books (Pinnacle plus US books) costs 1 credit per sport per refresh. 500/month is about 16 per day across all sports, so the refresh cooldown alone won't protect the quota; phase 2 needs a credit budget. |

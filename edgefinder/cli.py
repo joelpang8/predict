@@ -2,6 +2,7 @@
 
     python -m edgefinder series --sport nfl
     python -m edgefinder markets --sport nfl [--series KX...] [--no-book] [--limit 50]
+    python -m edgefinder edges --sport nfl [--min-edge 3] [--limit 20]
 """
 
 from __future__ import annotations
@@ -14,9 +15,12 @@ from decimal import Decimal
 
 import pandas as pd
 
+from edgefinder import pipeline
 from edgefinder.config import SPORTS, load_settings
+from edgefinder.matching.matcher import ET
 from edgefinder.sources.kalshi import KalshiClient, KalshiError, discover_series
 from edgefinder.sources.kalshi_models import KalshiMarket, Orderbook
+from edgefinder.sources.odds_api import OddsApiClient, OddsApiError
 
 DISCLAIMER = "Analysis tool only - not financial advice. No edge is guaranteed. This app places no orders."
 
@@ -112,6 +116,65 @@ def cmd_markets(args, client: KalshiClient) -> int:
     return 0
 
 
+def edge_rows(rows) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "game": r.event_ticker.split("-", 1)[1],
+                "bet": f"{r.side} {r.market_ticker.rsplit('-', 1)[1]}",
+                "means": r.label,
+                "kickoff (ET)": r.kickoff.astimezone(ET).strftime("%a %m-%d %H:%M"),
+                "ask¢": cents(r.ask),
+                "fair%": f"{r.fair * 100:.1f}",
+                "edge pts": f"{r.gross_edge * 100:+.1f}",
+                "fee¢/ct": cents(r.fee_per_contract),
+                "net pts": f"{r.net_edge * 100:+.1f}",
+                "EV/$": f"{r.ev_per_dollar * 100:+.1f}%",
+                "ask qty": num(r.ask_depth),
+                "size": f"{r.contracts:.0f} (${r.stake:.2f})" if r.contracts else "-",
+                "books": len(r.books),
+                "book spread": f"{r.book_spread * 100:.1f}",
+            }
+            for r in rows
+        ]
+    )
+
+
+def cmd_edges(args, client: KalshiClient) -> int:
+    s = client.settings
+    try:
+        odds = OddsApiClient(s.odds_api_key, bookmakers=s.odds_bookmakers, min_remaining=s.odds_min_remaining)
+    except OddsApiError as e:
+        print(e, file=sys.stderr)
+        return 2
+    with odds:
+        try:
+            res = pipeline.run(args.sport, s, client, odds)
+        except OddsApiError as e:
+            print(f"Odds request failed: {e}", file=sys.stderr)
+            return 2
+
+    print(DISCLAIMER)
+    print(
+        f"Kalshi fetched {res.kalshi_fetched:%H:%M:%S} UTC | odds fetched {res.odds_fetched:%H:%M:%S} UTC | "
+        f"{res.kalshi_games} Kalshi games, {res.odds_events} odds events, {len(res.report.matches)} matched"
+    )
+    for c in res.credits:
+        print(f"Odds API credits: this call {c['cost']}, used {c['used']}, remaining {c['remaining']}")
+    print()
+    rows = [r for r in res.rows if r.net_edge * 100 >= args.min_edge] if args.min_edge is not None else res.rows
+    if rows:
+        print(edge_rows(rows[: args.limit] if args.limit else rows).to_markdown(index=False))
+    else:
+        print("No rows to show.")
+    problems = [(u.key, u.reason) for u in res.report.unmatched] + [(k.key, k.reason) for k in res.skips]
+    if problems:
+        print(f"\nSkipped {len(problems)} (logged to {pipeline.UNMATCHED_LOG}):")
+        for key, reason in problems:
+            print(f"  - {key}: {reason}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="edgefinder", description=DISCLAIMER)
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -126,12 +189,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-book", action="store_true", help="Skip orderbook depth calls")
     p.add_argument("--limit", type=int, default=0, help="Show only the first N markets")
 
+    p = sub.add_parser("edges", help="Match to sportsbook odds and show edge/EV for both sides (1 odds credit)")
+    p.add_argument("--sport", choices=["nfl"], default="nfl")
+    p.add_argument("--min-edge", type=float, default=None, help="Only rows with net edge >= this many points")
+    p.add_argument("--limit", type=int, default=0)
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     settings = load_settings()
     try:
         with KalshiClient(settings) as client:
-            return {"series": cmd_series, "markets": cmd_markets}[args.cmd](args, client)
+            return {"series": cmd_series, "markets": cmd_markets, "edges": cmd_edges}[args.cmd](args, client)
     except KalshiError as e:
         print(f"Kalshi request failed: {e}", file=sys.stderr)
         return 2
