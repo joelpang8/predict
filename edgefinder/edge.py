@@ -45,6 +45,7 @@ class EdgeRow:
     fair: float
     gross_edge: float
     fee_per_contract: Decimal
+    fee: FeeParams
     net_edge: float
     ev_per_dollar: float
     contracts: Decimal
@@ -164,6 +165,7 @@ def compute_edges(
                     fair=fair,
                     gross_edge=fair - float(ask),
                     fee_per_contract=fee_pc,
+                    fee=fees,
                     net_edge=net,
                     ev_per_dollar=net / float(ask + fee_pc),
                     contracts=n,

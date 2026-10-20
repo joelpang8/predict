@@ -13,7 +13,7 @@ best-looking opportunities.
 |---|---|---|
 | 1 | Kalshi client + NFL markets, terminal table | done; verified live 2026-10-20 |
 | 2 | Odds feed, de-vigging, edge/EV | done; verified live 2026-10-20 |
-| 3 | SQLite snapshots, refresh job + cooldown, paper-trade log | — |
+| 3 | SQLite snapshots, refresh job + cooldown, paper-trade log | done; verified live 2026-10-20 |
 | 4 | Historical data + Elo (NFL first) | — |
 | 5 | Trending signals | — |
 | 6 | Streamlit dashboard, Refresh, Top Picks | — |
@@ -59,8 +59,8 @@ opposite-side bid, and "ask qty" is the size there.
 Put your key in `.env` as `ODDS_API_KEY`, then:
 
 ```bash
-python -m edgefinder edges --sport nfl                 # costs 1 Odds API credit
-python -m edgefinder edges --sport nfl --min-edge 3    # only net edge >= 3 points
+python -m edgefinder refresh --sport nfl               # costs 1 Odds API credit (alias: edges)
+python -m edgefinder refresh --sport nfl --min-edge 3  # only net edge >= 3 points
 ```
 
 Every Kalshi game market is matched to one sportsbook game, and both sides
@@ -75,9 +75,42 @@ Every Kalshi game market is matched to one sportsbook game, and both sides
   offer at the ask
 
 Games that can't be matched with certainty, have too few books, have
-stale data or have already started are skipped. The reason is printed and
-appended to `data/unmatched.jsonl`. Credits used and remaining are printed
+stale data or have already started are skipped, and the reason is printed
+and stored. Credits used today and remaining on the account are printed
 after every run.
+
+## Phase 3: refresh, history, paper trading
+
+Everything is stored in `data/edgefinder.sqlite` (git-ignored).
+
+```bash
+python -m edgefinder refresh --sport nfl   # pull + recompute (20 s cooldown, daily credit budget)
+python -m edgefinder show --sport nfl      # last results, no API calls
+python -m edgefinder poll                  # background poller, Ctrl-C to stop
+
+python -m edgefinder paper add KXNFLGAME-26OCT25SFATL-ATL YES             # suggested size
+python -m edgefinder paper add KXNFLGAME-26OCT25SFATL-ATL YES --contracts 10
+python -m edgefinder paper list
+python -m edgefinder paper settle          # settles markets Kalshi has finalized
+python -m edgefinder paper stats           # P&L, hit rate, CLV
+```
+
+- **Cooldown:** a refresh within 20 s of the last one makes no API calls and
+  shows the cached results with the seconds remaining.
+- **Credits:** odds pulls stop for the day (US/Eastern) at
+  `ODDS_DAILY_CREDIT_BUDGET` (default 15, about 500 a month). Kalshi keeps
+  refreshing.
+- **Stale data:** if a source fails, or the newest odds are more than
+  `MAX_SKEW_S` older than the Kalshi prices, edges are **not** recomputed. The
+  last good results stay on screen with a warning, marked STALE once older
+  than `MAX_DATA_AGE_S`. Every row shows when its Kalshi and odds data were
+  pulled.
+- **Poller:** refreshes Kalshi every 5 min (2 min within 3 h of a kickoff),
+  storing a price snapshot each time. It pulls odds at most every 3 h and
+  never uses the last 5 credits of the daily budget.
+- **Paper bets** record the ask, fee, size and fair value at the time. They
+  settle only when Kalshi marks the market `finalized` (a tie pays $0.50).
+  CLV compares your price with the last stored Kalshi ask before kickoff.
 
 ## Tests
 

@@ -40,8 +40,14 @@ committed.
   consensus, Kelly sizing, edge/EV per side
 - `edgefinder/sources/odds_api.py`: The Odds API client (h2h only; logs credits)
 - `edgefinder/matching/`: team table (exact aliases only) and the matcher
-- `edgefinder/pipeline.py`: one pull-and-compute pass (reused by the refresh job)
-- `edgefinder/cli.py`: `python -m edgefinder series|markets|edges`
+- `edgefinder/pipeline.py`: fetch_kalshi / fetch_odds / compute steps
+- `edgefinder/store/`: SQLite schema + `Store` (runs, Kalshi/odds snapshots,
+  edge rows, unmatched log, paper bets). Money as TEXT decimals.
+- `edgefinder/jobs/refresh.py`: Refresh job (cooldown, odds cache, daily credit
+  budget, never computes from stale or skewed data, keeps last good results)
+- `edgefinder/jobs/poller.py`: APScheduler poller (faster near kickoff)
+- `edgefinder/paper/ledger.py`: paper bets, settlement (finalized only), stats/CLV
+- `edgefinder/cli.py`: `python -m edgefinder series|markets|refresh|show|poll|paper`
 - `tests/`: pytest; `tests/fixtures/` holds recorded live Kalshi responses
 - `docs/api-verification.md`: source-of-truth log for external APIs
 

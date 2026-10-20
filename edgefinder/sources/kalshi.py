@@ -152,6 +152,9 @@ class KalshiClient:
         for m in self._paginate("/markets", "markets", params, MARKETS_PAGE_MAX):
             yield KalshiMarket.from_api(m)
 
+    def get_market(self, ticker: str) -> dict:
+        return self._get(f"/markets/{ticker}").get("market") or {}
+
     def get_orderbook(self, ticker: str, depth: int = 0) -> Orderbook:
         data = self._get(f"/markets/{ticker}/orderbook", {"depth": depth})
         return Orderbook.from_api(ticker, data.get("orderbook_fp"))

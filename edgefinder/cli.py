@@ -1,8 +1,12 @@
-"""Terminal entry point (phase 1).
+"""Terminal entry point.
 
     python -m edgefinder series --sport nfl
     python -m edgefinder markets --sport nfl [--series KX...] [--no-book] [--limit 50]
-    python -m edgefinder edges --sport nfl [--min-edge 3] [--limit 20]
+    python -m edgefinder refresh --sport nfl [--min-edge 3] [--limit 20]   (alias: edges)
+    python -m edgefinder show --sport nfl          # cached results, no API calls
+    python -m edgefinder poll                      # background poller (Ctrl-C to stop)
+    python -m edgefinder paper add TICKER YES|NO [--contracts N]
+    python -m edgefinder paper list | settle | stats
 """
 
 from __future__ import annotations
@@ -15,12 +19,14 @@ from decimal import Decimal
 
 import pandas as pd
 
-from edgefinder import pipeline
 from edgefinder.config import SPORTS, load_settings
+from edgefinder.jobs import poller
+from edgefinder.jobs.refresh import RefreshService, View
 from edgefinder.matching.matcher import ET
+from edgefinder.paper import ledger
 from edgefinder.sources.kalshi import KalshiClient, KalshiError, discover_series
 from edgefinder.sources.kalshi_models import KalshiMarket, Orderbook
-from edgefinder.sources.odds_api import OddsApiClient, OddsApiError
+from edgefinder.store.db import Store, parse_ts
 
 DISCLAIMER = "Analysis tool only - not financial advice. No edge is guaranteed. This app places no orders."
 
@@ -116,62 +122,126 @@ def cmd_markets(args, client: KalshiClient) -> int:
     return 0
 
 
-def edge_rows(rows) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
+def _t(ts: str | None) -> str:
+    return parse_ts(ts).strftime("%H:%M:%S") if ts else "-"
+
+
+def edge_table(rows: list[dict]) -> pd.DataFrame:
+    out = []
+    for r in rows:
+        n, stake = Decimal(r["contracts"]), Decimal(r["stake"])
+        out.append(
             {
-                "game": r.event_ticker.split("-", 1)[1],
-                "bet": f"{r.side} {r.market_ticker.rsplit('-', 1)[1]}",
-                "means": r.label,
-                "kickoff (ET)": r.kickoff.astimezone(ET).strftime("%a %m-%d %H:%M"),
-                "ask¢": cents(r.ask),
-                "fair%": f"{r.fair * 100:.1f}",
-                "edge pts": f"{r.gross_edge * 100:+.1f}",
-                "fee¢/ct": cents(r.fee_per_contract),
-                "net pts": f"{r.net_edge * 100:+.1f}",
-                "EV/$": f"{r.ev_per_dollar * 100:+.1f}%",
-                "ask qty": num(r.ask_depth),
-                "size": f"{r.contracts:.0f} (${r.stake:.2f})" if r.contracts else "-",
-                "books": len(r.books),
-                "book spread": f"{r.book_spread * 100:.1f}",
+                "game": r["event_ticker"].split("-", 1)[1],
+                "bet": f"{r['side']} {r['market_ticker'].rsplit('-', 1)[1]}",
+                "means": r["label"],
+                "kickoff (ET)": parse_ts(r["kickoff"]).astimezone(ET).strftime("%a %m-%d %H:%M"),
+                "ask¢": cents(Decimal(r["ask"])),
+                "fair%": f"{r['fair'] * 100:.1f}",
+                "edge pts": f"{r['gross_edge'] * 100:+.1f}",
+                "fee¢/ct": cents(Decimal(r["fee_per_contract"])),
+                "net pts": f"{r['net_edge'] * 100:+.1f}",
+                "EV/$": f"{r['ev_per_dollar'] * 100:+.1f}%",
+                "ask qty": num(Decimal(r["ask_depth"])) if r["ask_depth"] else "-",
+                "size": f"{n:.0f} (${stake:.2f})" if n else "-",
+                "books": len(r["books"].split(",")),
+                "updated K / odds (UTC)": f"{_t(r['kalshi_fetched'])} / {_t(r['odds_fetched'])}",
             }
-            for r in rows
-        ]
-    )
+        )
+    return pd.DataFrame(out)
 
 
-def cmd_edges(args, client: KalshiClient) -> int:
-    s = client.settings
-    try:
-        odds = OddsApiClient(s.odds_api_key, bookmakers=s.odds_bookmakers, min_remaining=s.odds_min_remaining)
-    except OddsApiError as e:
-        print(e, file=sys.stderr)
-        return 2
-    with odds:
-        try:
-            res = pipeline.run(args.sport, s, client, odds)
-        except OddsApiError as e:
-            print(f"Odds request failed: {e}", file=sys.stderr)
-            return 2
-
+def print_view(v: View, min_edge: float | None = None, limit: int = 0) -> None:
     print(DISCLAIMER)
-    print(
-        f"Kalshi fetched {res.kalshi_fetched:%H:%M:%S} UTC | odds fetched {res.odds_fetched:%H:%M:%S} UTC | "
-        f"{res.kalshi_games} Kalshi games, {res.odds_events} odds events, {len(res.report.matches)} matched"
-    )
-    for c in res.credits:
-        print(f"Odds API credits: this call {c['cost']}, used {c['used']}, remaining {c['remaining']}")
+    k = f"{v.kalshi_fetched:%Y-%m-%d %H:%M:%S}" if v.kalshi_fetched else "never"
+    o = f"{v.odds_fetched:%Y-%m-%d %H:%M:%S}" if v.odds_fetched else "never"
+    print(f"Kalshi data: {k} UTC | odds data: {o} UTC")
+    credits = f"Odds credits today: {v.credits_spent_today}/{v.credits_budget}"
+    if v.credits_remaining is not None:
+        credits += f" | account remaining: {v.credits_remaining}"
+    print(credits + (f" | Refresh cooldown: {v.cooldown_remaining_s}s" if v.cooldown_remaining_s else ""))
+    for w in v.warnings:
+        print(f"WARNING: {w}")
     print()
-    rows = [r for r in res.rows if r.net_edge * 100 >= args.min_edge] if args.min_edge is not None else res.rows
+    rows = [r for r in v.rows if min_edge is None or r["net_edge"] * 100 >= min_edge]
     if rows:
-        print(edge_rows(rows[: args.limit] if args.limit else rows).to_markdown(index=False))
+        print(edge_table(rows[:limit] if limit else rows).to_markdown(index=False))
     else:
         print("No rows to show.")
-    problems = [(u.key, u.reason) for u in res.report.unmatched] + [(k.key, k.reason) for k in res.skips]
-    if problems:
-        print(f"\nSkipped {len(problems)} (logged to {pipeline.UNMATCHED_LOG}):")
-        for key, reason in problems:
-            print(f"  - {key}: {reason}")
+    if v.unmatched:
+        print(f"\nSkipped {len(v.unmatched)}:")
+        for u in v.unmatched:
+            print(f"  - {u['key']}: {u['reason']}")
+
+
+def service(settings) -> RefreshService:
+    return RefreshService(settings, Store(settings.db_path))
+
+
+def cmd_refresh(args, settings) -> int:
+    out = service(settings).refresh(args.sport, trigger="cli")
+    if out.status == "cooldown":
+        print(f"Cooldown: {out.view.cooldown_remaining_s}s left. Showing cached results.\n")
+    elif out.credits_cost:
+        print(f"This refresh used {out.credits_cost} odds credit(s).\n")
+    print_view(out.view, args.min_edge, args.limit)
+    return 0 if out.status in ("ok", "cooldown") else 1
+
+
+def cmd_show(args, settings) -> int:
+    print_view(service(settings).view(args.sport), args.min_edge, args.limit)
+    return 0
+
+
+def cmd_poll(args, settings) -> int:
+    print(DISCLAIMER)
+    print("Polling (Ctrl-C to stop). Kalshi every "
+          f"{settings.poll_interval_s}s ({settings.poll_interval_near_kickoff_s}s within {settings.near_kickoff_h:g}h of kickoff); "
+          f"odds at most every {settings.poller_odds_interval_s // 60} min within the daily budget.", flush=True)
+    logging.getLogger("edgefinder").setLevel(logging.INFO)
+    try:
+        poller.run_blocking(service(settings))
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    return 0
+
+
+def cmd_paper(args, settings) -> int:
+    store = Store(settings.db_path)
+    now = datetime.now(timezone.utc)
+    if args.paper_cmd == "add":
+        try:
+            n = Decimal(args.contracts) if args.contracts is not None else None
+            bet_id = ledger.log_bet(store, settings, args.sport, args.ticker, args.side, now, n, args.notes or "")
+        except ledger.PaperError as e:
+            print(f"Not logged: {e}", file=sys.stderr)
+            return 1
+        b = next(b for b in store.paper_bets() if b["id"] == bet_id)
+        print(f"Paper bet #{bet_id}: {b['contracts']} x {b['side']} {b['market_ticker']} at {cents(Decimal(b['price']))}c "
+              f"+ {cents(Decimal(b['fee_per_contract']))}c fee ({b['label']}), logged {b['created_at']}")
+        return 0
+    if args.paper_cmd == "settle":
+        with KalshiClient(settings) as k:
+            done = ledger.settle(store, k, now)
+        print(f"Settled {len(done)} bet(s).")
+        for b in done:
+            print(f"  #{b['id']} {b['label']}: payout {b['payout']} per contract, P&L ${b['pnl']:.2f}")
+        return 0
+    bets = store.paper_bets()
+    if args.paper_cmd == "list":
+        if not bets:
+            print("No paper bets yet.")
+            return 0
+        cols = ["id", "created_at", "label", "side", "market_ticker", "contracts", "price", "fee_per_contract",
+                "net_edge_at_entry", "status", "result", "pnl", "closing_ask"]
+        print(pd.DataFrame(bets)[cols].to_markdown(index=False))
+        return 0
+    st = ledger.stats(bets)
+    print(f"Bets: {st.bets} ({st.open} open, {st.settled} settled)")
+    if st.settled:
+        print(f"Hit rate: {st.hit_rate:.1%} | staked ${st.staked:.2f} | P&L ${st.pnl:.2f} | ROI {st.roi:+.1%}")
+    if st.avg_clv_cents is not None:
+        print(f"Avg CLV vs Kalshi closing ask: {st.avg_clv_cents:+.1f}c over {st.clv_count} bet(s)")
     return 0
 
 
@@ -189,17 +259,39 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-book", action="store_true", help="Skip orderbook depth calls")
     p.add_argument("--limit", type=int, default=0, help="Show only the first N markets")
 
-    p = sub.add_parser("edges", help="Match to sportsbook odds and show edge/EV for both sides (1 odds credit)")
-    p.add_argument("--sport", choices=["nfl"], default="nfl")
-    p.add_argument("--min-edge", type=float, default=None, help="Only rows with net edge >= this many points")
-    p.add_argument("--limit", type=int, default=0)
+    for name, hlp in (
+        ("refresh", "Pull Kalshi + odds (cooldown, credit budget), recompute and store edges"),
+        ("edges", "Alias for refresh"),
+        ("show", "Show the last computed results without calling any API"),
+    ):
+        p = sub.add_parser(name, help=hlp)
+        p.add_argument("--sport", choices=["nfl"], default="nfl")
+        p.add_argument("--min-edge", type=float, default=None, help="Only rows with net edge >= this many points")
+        p.add_argument("--limit", type=int, default=0)
+
+    sub.add_parser("poll", help="Run the background poller in the foreground")
+
+    p = sub.add_parser("paper", help="Paper trading log")
+    psub = p.add_subparsers(dest="paper_cmd", required=True)
+    pa = psub.add_parser("add", help="Log a paper bet at the latest computed ask")
+    pa.add_argument("ticker")
+    pa.add_argument("side", choices=["YES", "NO", "yes", "no"])
+    pa.add_argument("--contracts", type=str, default=None, help="Default: the suggested size")
+    pa.add_argument("--sport", choices=["nfl"], default="nfl")
+    pa.add_argument("--notes", default="")
+    psub.add_parser("list")
+    psub.add_parser("settle", help="Settle finalized markets from Kalshi results")
+    psub.add_parser("stats", help="P&L, hit rate, CLV")
 
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     settings = load_settings()
     try:
-        with KalshiClient(settings) as client:
-            return {"series": cmd_series, "markets": cmd_markets, "edges": cmd_edges}[args.cmd](args, client)
+        if args.cmd in ("series", "markets"):
+            with KalshiClient(settings) as client:
+                return {"series": cmd_series, "markets": cmd_markets}[args.cmd](args, client)
+        handler = {"refresh": cmd_refresh, "edges": cmd_refresh, "show": cmd_show, "poll": cmd_poll, "paper": cmd_paper}
+        return handler[args.cmd](args, settings)
     except KalshiError as e:
         print(f"Kalshi request failed: {e}", file=sys.stderr)
         return 2

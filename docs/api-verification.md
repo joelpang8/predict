@@ -28,6 +28,7 @@ Sources:
 | NFL game series | `KXNFLGAME` ("NFL Game"), `fee_type=quadratic_with_maker_fees`, `fee_multiplier=1`. One event per game (`KXNFLGAME-26OCT22NECHI`, `mutually_exclusive=true`), one market per team (`…-CHI`, `yes_sub_title` = team). |
 | Game time | **No kickoff field.** `occurrence_datetime` = `expected_expiration_time` (looks like kickoff + 3h; not documented). `rules_primary` gives the scheduled *date*; `close_time` is days later. Matching must not treat any of these as kickoff. |
 | Rate limits (authenticated) | Token buckets: most requests cost 10 tokens; Basic tier Read budget 200 tokens/s (20 req/s), 3 s burst. 429 body `{"error":"too many requests"}`. **429 has no `Retry-After` header**; the docs say to use exponential backoff. |
+| Market lifecycle | docs `market_lifecycle`: statuses `initialized, active, inactive, closed, determined, disputed, amended, finalized`; `result` is `yes`, `no` or `scalar`; only `finalized` is paid out. Paper bets settle on `finalized` only. NFL ties settle at $0.50 (`rules_secondary`). |
 
 ### Fees (verified 2026-10-20)
 

@@ -87,6 +87,22 @@ class Settings:
     kelly_multiplier: float = 0.25
     max_bet_pct: float = 0.02
 
+    # Refresh / caching (self-imposed defaults)
+    db_path: str = "data/edgefinder.sqlite"
+    refresh_cooldown_s: int = 20
+    # Free tier = 500 credits/month, about 16/day. Odds pulls stop for the day
+    # (US/Eastern) at this total; Kalshi keeps refreshing.
+    odds_daily_credit_budget: int = 15
+
+    # Background poller
+    poll_interval_s: int = 300
+    poll_interval_near_kickoff_s: int = 120
+    near_kickoff_h: float = 3.0
+    # The poller pulls odds at most this often, and never uses the last
+    # `poller_manual_reserve` credits of the daily budget (kept for Refresh).
+    poller_odds_interval_s: int = 10800
+    poller_manual_reserve: int = 5
+
 
 def load_settings(env_file: str | None = ".env") -> Settings:
     if env_file:
@@ -112,4 +128,12 @@ def load_settings(env_file: str | None = ".env") -> Settings:
         bankroll=Decimal(g("BANKROLL", "1000")),
         kelly_multiplier=float(g("KELLY_MULTIPLIER", "0.25")),
         max_bet_pct=float(g("MAX_BET_PCT", "0.02")),
+        db_path=g("DB_PATH", "data/edgefinder.sqlite"),
+        refresh_cooldown_s=int(g("REFRESH_COOLDOWN_S", "20")),
+        odds_daily_credit_budget=int(g("ODDS_DAILY_CREDIT_BUDGET", "15")),
+        poll_interval_s=int(g("POLL_INTERVAL_S", "300")),
+        poll_interval_near_kickoff_s=int(g("POLL_INTERVAL_NEAR_KICKOFF_S", "120")),
+        near_kickoff_h=float(g("NEAR_KICKOFF_H", "3")),
+        poller_odds_interval_s=int(g("POLLER_ODDS_INTERVAL_S", "10800")),
+        poller_manual_reserve=int(g("POLLER_MANUAL_RESERVE", "5")),
     )
