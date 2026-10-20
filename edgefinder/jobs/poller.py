@@ -50,7 +50,7 @@ def nightly_history(service: RefreshService) -> None:
 
     for sport in loader.LOADERS:
         try:
-            n = loader.load(service.store, sport)
+            n = loader.load(service.store, sport, nightly=True)
             log.info("nightly history %s: %d games", sport, n)
         except Exception:
             log.exception("nightly history load failed for %s", sport)

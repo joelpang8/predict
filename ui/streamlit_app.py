@@ -262,8 +262,18 @@ with tab_paper:
     c[2].metric("Hit rate", f"{stats.hit_rate:.0%}" if stats.hit_rate is not None else "–")
     c[3].metric("P&L", dash.money(stats.pnl))
     c[4].metric("ROI", f"{stats.roi:+.1%}" if stats.roi is not None else "–")
-    c[5].metric("Avg CLV", f"{stats.avg_clv_cents:+.1f}¢" if stats.avg_clv_cents is not None else "–",
+    c[5].metric("CLV vs Kalshi close", f"{stats.avg_clv_cents:+.1f}¢" if stats.avg_clv_cents is not None else "–",
                 help="Kalshi closing ask for your side minus the price you got. Positive = you beat the close.")
+    from edgefinder import backtest as bt
+
+    clv = bt.clv_report(store, settings, now)
+    ps, ss = clv.stats("paper"), clv.stats("signal")
+    c2 = st.columns(3)
+    c2[0].metric("Paper CLV vs books", f"{ps['avg_clv_pts']:+.2f} pts" if ps["n"] else "–",
+                 help="Sportsbook consensus at our last odds pull before kickoff, minus your price. Positive = beat the close.")
+    c2[1].metric("Flagged sides CLV", f"{ss['avg_clv_pts']:+.2f} pts" if ss["n"] else "–",
+                 help="Same, for every side the app flagged (net edge above the minimum) whether or not you logged it.")
+    c2[2].metric("Waiting for a closing line", clv.pending)
     if st.button("Settle finished games", help="Reads Kalshi results; only 'finalized' markets settle."):
         with KalshiClient(settings) as k:
             done = ledger.settle(store, k, datetime.now(timezone.utc))

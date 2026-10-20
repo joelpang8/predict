@@ -82,8 +82,9 @@ def compute(
     res = ComputeResult(sport, odds_events=len(op.events))
     games = build_games(sport, kp.markets, res.report)
     res.kalshi_games = len(games)
-    model_probs = model.probs(games) if model else {}
     match_games(sport, games, op.events, res.report)
+    events = {m.game.event_ticker: m.event for m in res.report.matches}
+    model_probs = model.probs(games, events) if model else {}
     now = now or datetime.now(timezone.utc)
     for m in res.report.matches:
         fp = kp.fees.get(m.game.event_ticker)

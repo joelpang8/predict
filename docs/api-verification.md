@@ -26,6 +26,9 @@ Sources:
 | Orderbook | `orderbook_fp.yes_dollars` / `.no_dollars`, bids only, `[price, count]`. YES ask = 1 − best NO bid, same size. **Live and docs order is ascending (best last); the SDK docstring says the opposite, so we sort ourselves.** Live check: implied asks equal the market's `yes_ask_dollars` / `no_ask_dollars`. |
 | Batch orderbooks | `GET /markets/orderbooks`, 1–100 tickers as repeated `tickers=`. Used live. |
 | NFL game series | `KXNFLGAME` ("NFL Game"), `fee_type=quadratic_with_maker_fees`, `fee_multiplier=1`. One event per game (`KXNFLGAME-26OCT22NECHI`, `mutually_exclusive=true`), one market per team (`…-CHI`, `yes_sub_title` = team). |
+| NBA / MLB game series | `KXNBAGAME` ("NBA Game"; `quadratic_with_maker_fees`, multiplier 1) and `KXMLBGAME` ("Professional Baseball Game"; multiplier **0.5**). `GET /series/fee_changes?series_ticker=KXMLBGAME&show_historical=true`: 1 from 2025-10-04, **0.5 from 2026-08-07**, after the fee-schedule PDF (July 7) that still lists 1. We use the live value. Team codes: all 30 NBA from open markets; all 30 MLB from 659 settled 2026 events (e.g. `AZ`, `ATH`, `CWS`, `WSH`, `KC`, `SD`, `SF`, `TB`). |
+| MLB tickers | `KXMLBGAME-26OCT272000MILTB`: date + **US/Eastern start time** (HHMM) + teams; doubleheaders add `G1`/`G2` (e.g. `KXMLBGAME-26SEP041410DETCLEG1` and `…1915…G2`, matching MLB's 14:10 and 19:15 ET starts). `expected_expiration_time` = start + 3h. The matcher checks the odds kickoff within 20 min of the ticker time. |
+| Postponements | NFL/NBA: a game starting within 48h of schedule resolves normally, otherwise at a fair price. MLB: the market stays open for a reschedule within two days, otherwise fair price. |
 | Game time | **No kickoff field.** `occurrence_datetime` = `expected_expiration_time` (looks like kickoff + 3h; not documented). `rules_primary` gives the scheduled *date*; `close_time` is days later. Matching must not treat any of these as kickoff. |
 | Rate limits (authenticated) | Token buckets: most requests cost 10 tokens; Basic tier Read budget 200 tokens/s (20 req/s), 3 s burst. 429 body `{"error":"too many requests"}`. **429 has no `Retry-After` header**; the docs say to use exponential backoff. |
 | Candlesticks | `GET /markets/candlesticks`: `market_tickers` (≤100, comma-separated), `start_ts`, `end_ts`, `period_interval` 1/60/1440; ≤10,000 candles per call; no auth. Each candle has `end_period_ts`, `volume_fp`, `open_interest_fp`, `yes_ask`/`yes_bid`/`price` OHLC `*_dollars`. No NO-side fields, so NO ask = 1 − YES bid. Confirmed live. |
@@ -80,3 +83,12 @@ Source: Kalshi Fee Schedule PDF, "Last updated and effective: July 7, 2026"
 | Fields | From the nflreadr schedules data dictionary: `gametime` is 24h US/Eastern regardless of venue; `location` is Home/Neutral; `result` = home − away; `*_rest` = days of rest; `*_moneyline` = closing odds (coverage 2006+). |
 | Team codes | nflverse `JAX, LA, STL, SD, OAK` map to Kalshi `JAC, LAR, LAR, LAC, LV`. Every 2026 team maps to one of Kalshi's 32 codes. |
 | Ties | 16 ties in 7,110 games since 2000, which sets `NFL_TIE_PROB=0.0023`. |
+
+## NBA and MLB history (phase 7; checked 2026-10-20)
+
+| Item | Finding |
+|---|---|
+| nba_api | `stats.nba.com` accepts the connection from this cloud environment but never answers (ReadTimeout). This is common for data-centre IPs. The loader tries nba_api first (`NBA_SOURCE=auto`) and falls back to Basketball-Reference. On a home connection nba_api is expected to work, but that hasn't been verified here. |
+| Basketball-Reference | `/leagues/NBA_<season>_games-<month>.html`; the schedule table has `data-stat` cells (`date_game`, `game_start_time` in ET per the column header "Start (ET)", visitor/home names and points) and includes upcoming games. Requests are spaced 3.5 s apart (Sports-Reference allows about 20 a minute). |
+| pybaseball | `season_game_logs` reads Retrosheet files from `raw.githubusercontent.com/chadwickbureau/retrosheet/master/gamelog/GL<year>.TXT`, which now return 404, and it calls the GitHub API (not available here). Its Baseball-Reference schedule pages lack starting pitchers. Not used. |
+| MLB Stats API | `statsapi.mlb.com/api/v1/schedule?sportId=1&startDate&endDate&gameType=R,F,D,L,W&hydrate=probablePitcher`: per game `gamePk`, `gameDate` (UTC), `officialDate`, `gameNumber`/`doubleHeader`, `gameType`, status, scores, probable starters (99.8% coverage on 2025–26 finals). Official, no key. |

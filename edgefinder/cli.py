@@ -10,6 +10,8 @@
     python -m edgefinder paper list | settle | stats
     python -m edgefinder history load --sport nfl  # nflverse schedules/results into SQLite
     python -m edgefinder model ratings | eval [--tune] --sport nfl
+    python -m edgefinder backtest model --sport mlb --test 2021-2025 [--tune --train 2012-2019]
+    python -m edgefinder backtest clv [--sport nba]
 """
 
 from __future__ import annotations
@@ -327,6 +329,37 @@ def cmd_model(args, settings) -> int:
     return 0
 
 
+def cmd_backtest(args, settings) -> int:
+    from edgefinder import backtest
+
+    store = Store(settings.db_path)
+    if args.backtest_cmd == "clv":
+        rep = backtest.clv_report(store, settings, datetime.now(timezone.utc), args.sport)
+        print("Closing line value vs the sportsbook consensus at our last odds pull before kickoff.")
+        for kind, title in (("signal", "Flagged sides (net edge >= min at some refresh)"), ("paper", "Paper bets")):
+            st = rep.stats(kind)
+            if st["n"]:
+                print(f"{title}: n={st['n']}, avg CLV {st['avg_clv_pts']:+.2f} pts, beat the close {st['beat_close_pct']:.0%}, "
+                      f"avg line move since entry {st['avg_line_move_pts']:+.2f} pts")
+            else:
+                print(f"{title}: none with a recorded closing line yet")
+        print(f"Pending (no closing line yet): {rep.pending}")
+        return 0
+    test = _span(args.test)
+    if not store.history(args.sport):
+        print(f"No history loaded. Run: python -m edgefinder history load --sport {args.sport}", file=sys.stderr)
+        return 1
+    params, r = backtest.model_report(store, args.sport, *test, train=_span(args.train) if args.tune else None)
+    print(f"{args.sport.upper()} Elo backtest {test[0]}-{test[1]} ({r.n} games), params {params}")
+    print(f"  log loss {r.model_log_loss:.4f} | Brier {r.model_brier:.4f} | home-rate baseline {r.base_rate_log_loss:.4f}")
+    if r.market_n:
+        print(f"  closing moneyline on {r.market_n} games: {r.market_log_loss:.4f} vs Elo {r.model_log_loss_on_market_games:.4f}")
+    else:
+        print("  no closing-line data in this sport's history source")
+    print(pd.DataFrame(r.calibration).round(3).to_markdown(index=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="edgefinder", description=DISCLAIMER)
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -347,13 +380,13 @@ def main(argv: list[str] | None = None) -> int:
         ("show", "Show the last computed results without calling any API"),
     ):
         p = sub.add_parser(name, help=hlp)
-        p.add_argument("--sport", choices=["nfl"], default="nfl")
+        p.add_argument("--sport", choices=SPORTS, default="nfl")
         p.add_argument("--min-edge", type=float, default=None, help="Only rows with net edge >= this many points")
         p.add_argument("--limit", type=int, default=0)
 
     sub.add_parser("poll", help="Run the background poller in the foreground")
     p = sub.add_parser("picks", help="Top picks from the last results (no API calls)")
-    p.add_argument("--sport", choices=["nfl"], default="nfl")
+    p.add_argument("--sport", choices=SPORTS, default="nfl")
 
     p = sub.add_parser("paper", help="Paper trading log")
     psub = p.add_subparsers(dest="paper_cmd", required=True)
@@ -361,7 +394,7 @@ def main(argv: list[str] | None = None) -> int:
     pa.add_argument("ticker")
     pa.add_argument("side", choices=["YES", "NO", "yes", "no"])
     pa.add_argument("--contracts", type=str, default=None, help="Default: the suggested size")
-    pa.add_argument("--sport", choices=["nfl"], default="nfl")
+    pa.add_argument("--sport", choices=SPORTS, default="nfl")
     pa.add_argument("--notes", default="")
     psub.add_parser("list")
     psub.add_parser("settle", help="Settle finalized markets from Kalshi results")
@@ -370,17 +403,27 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("history", help="Historical data")
     hsub = p.add_subparsers(dest="history_cmd", required=True)
     hl = hsub.add_parser("load", help="Download nflverse schedules/results into SQLite")
-    hl.add_argument("--sport", choices=["nfl"], default="nfl")
+    hl.add_argument("--sport", choices=SPORTS, default="nfl")
 
     p = sub.add_parser("model", help="Elo model")
     msub = p.add_subparsers(dest="model_cmd", required=True)
     mr = msub.add_parser("ratings")
-    mr.add_argument("--sport", choices=["nfl"], default="nfl")
+    mr.add_argument("--sport", choices=SPORTS, default="nfl")
     me = msub.add_parser("eval", help="Out-of-sample log loss, Brier, calibration vs closing line")
-    me.add_argument("--sport", choices=["nfl"], default="nfl")
+    me.add_argument("--sport", choices=SPORTS, default="nfl")
     me.add_argument("--train", default="2015-2021")
     me.add_argument("--test", default="2022-2025")
     me.add_argument("--tune", action="store_true", help="Grid-search parameters on the training seasons first")
+
+    p = sub.add_parser("backtest", help="Model backtest and closing line value")
+    bsub = p.add_subparsers(dest="backtest_cmd", required=True)
+    bm = bsub.add_parser("model", help="Walk-forward Elo: log loss, calibration, vs closing line where available")
+    bm.add_argument("--sport", choices=SPORTS, default="nfl")
+    bm.add_argument("--test", default="2022-2025")
+    bm.add_argument("--train", default="2015-2021")
+    bm.add_argument("--tune", action="store_true")
+    bc = bsub.add_parser("clv", help="CLV of flagged sides and paper bets vs our recorded closing lines")
+    bc.add_argument("--sport", choices=SPORTS, default=None)
 
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
@@ -391,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
                 return {"series": cmd_series, "markets": cmd_markets}[args.cmd](args, client)
         handler = {
             "refresh": cmd_refresh, "edges": cmd_refresh, "show": cmd_show, "poll": cmd_poll, "paper": cmd_paper,
-            "history": cmd_history, "model": cmd_model, "picks": cmd_picks,
+            "history": cmd_history, "model": cmd_model, "picks": cmd_picks, "backtest": cmd_backtest,
         }
         return handler[args.cmd](args, settings)
     except KalshiError as e:

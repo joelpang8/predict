@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from edgefinder.matching.matcher import KalshiGame
 from edgefinder.models.elo import EloParams, EloState, predict, run
@@ -24,9 +24,14 @@ class ModelProb:
     note: str  # e.g. starters, early-season warning
 
 
-# Fit 2015-2021, out-of-sample 2022-2025 log loss 0.633 (market 0.608). See docs/model.md.
+# Fitted on training seasons only; out-of-sample results in docs/model.md.
 NFL_PARAMS = EloParams(k=20.0, hfa=35.0, bye_bonus=25.0, season_regress=0.4, playoff_mult=1.2)
-PARAMS = {"nfl": NFL_PARAMS}
+MLB_PARAMS = EloParams(
+    k=6.0, hfa=24.0, bye_bonus=0.0, season_regress=1 / 3, playoff_mult=1.0, mov="none", pitcher_k=4.0, pitcher_weight=1.0
+)
+NBA_PARAMS = EloParams(k=20.0, hfa=100.0, bye_bonus=0.0, season_regress=0.25, playoff_mult=1.0, mov="nba", b2b_penalty=25.0)
+PARAMS = {"nfl": NFL_PARAMS, "nba": NBA_PARAMS, "mlb": MLB_PARAMS}
+START_TOLERANCE_S = 20 * 60
 
 
 class ModelService:
@@ -50,20 +55,32 @@ class ModelService:
             self._cache[key] = (loaded, state, games)
             return state, games
 
-    def probs(self, games: list[KalshiGame]) -> dict[str, ModelProb | str]:
-        """event_ticker -> ModelProb, or a reason string when there's no estimate."""
+    def probs(self, games: list[KalshiGame], events: dict | None = None) -> dict[str, ModelProb | str]:
+        """event_ticker -> ModelProb, or a reason string when there's no estimate.
+
+        `events` (event_ticker -> matched OddsEvent) lets NBA games without a
+        schedule row be predicted from the odds event's home/away teams.
+        """
         out: dict[str, ModelProb | str] = {}
         if not games:
             return out
-        st = self._state(games[0].sport)
+        sport = games[0].sport
+        st = self._state(sport)
         if st is None:
-            return {g.event_ticker: "no history loaded (run: history load)" for g in games}
+            return {g.event_ticker: f"no history loaded (run: history load --sport {sport})" for g in games}
         state, hist = st
         by_day: dict[str, list[dict]] = {}
         for h in hist:
             by_day.setdefault(h["gameday"], []).append(h)
         for g in games:
             cands = [h for h in by_day.get(g.game_date.isoformat(), []) if {h["home"], h["away"]} == set(g.markets)]
+            if g.start is not None and len(cands) > 1:  # doubleheader: pick by start time
+                cands = [h for h in cands if h.get("kickoff_utc") and abs(
+                    (datetime.fromisoformat(h["kickoff_utc"]) - g.start).total_seconds()) <= START_TOLERANCE_S]
+            synthetic = False
+            if not cands and sport == "nba" and events and g.event_ticker in events:
+                cands = [self._synthesize(g, events[g.event_ticker], hist)]
+                synthetic = True
             if len(cands) != 1:
                 out[g.event_ticker] = f"{len(cands)} schedule rows for {'/'.join(sorted(g.markets))} on {g.game_date}"
                 continue
@@ -73,9 +90,34 @@ class ModelService:
                 continue
             p_home = predict(state, h)
             notes = []
-            if h.get("week") is not None and h["week"] <= 2 and h.get("game_type") == "REG":
+            if sport == "nfl" and h.get("week") is not None and h["week"] <= 2 and h.get("game_type") == "REG":
                 notes.append("early season: ratings mostly last year's")
-            starters = [s for s in (h.get("away_starter"), h.get("home_starter")) if s]
-            notes.append(f"QBs: {' @ '.join(starters)}" if len(starters) == 2 else "starting QBs not listed")
+            if sport == "nfl":
+                starters = [x for x in (h.get("away_starter"), h.get("home_starter")) if x]
+                notes.append(f"QBs: {' @ '.join(starters)}" if len(starters) == 2 else "starting QBs not listed")
+            if sport == "mlb":
+                starters = [x for x in (h.get("away_starter"), h.get("home_starter")) if x]
+                notes.append(f"SPs: {' @ '.join(starters)}" if len(starters) == 2 else "starting pitchers not listed")
+            if sport == "nba" and synthetic:
+                notes.append("not in loaded schedule: home/away from the odds feed")
             out[g.event_ticker] = ModelProb({h["home"]: p_home, h["away"]: 1 - p_home}, h["game_id"], h.get("week"), "; ".join(notes))
         return out
+
+    @staticmethod
+    def _synthesize(g: KalshiGame, event, hist: list[dict]) -> dict:
+        from edgefinder.matching.teams import team_code
+
+        home, away = team_code(g.sport, event.home_team), team_code(g.sport, event.away_team)
+        last = {}
+        for h in hist:
+            if h["gameday"] < g.game_date.isoformat():
+                for t in (h["home"], h["away"]):
+                    last[t] = h["gameday"]
+        def rest(t):
+            return (g.game_date - date.fromisoformat(last[t])).days if t in last else None
+        season = g.game_date.year + 1 if g.game_date.month >= 8 else g.game_date.year
+        return {
+            "game_id": f"odds:{event.id}", "season": season, "game_type": "REG", "week": None,
+            "gameday": g.game_date.isoformat(), "kickoff_utc": event.commence_time.isoformat(), "home": home, "away": away,
+            "home_score": None, "away_score": None, "neutral": 0, "home_rest": rest(home), "away_rest": rest(away),
+        }

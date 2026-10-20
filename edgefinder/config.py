@@ -59,7 +59,7 @@ class Settings:
     # at 2 req/s (see docs/api-verification.md).
     kalshi_max_rps: float = 1.0
     kalshi_timeout_s: float = 15.0
-    kalshi_max_retries: int = 4
+    kalshi_max_retries: int = 5  # 2+4+8+16+32 s of backoff on 429/5xx
     # Explicit series tickers per sport; empty means auto-discover.
     kalshi_series: dict[str, tuple[str, ...]] = field(default_factory=dict)
 

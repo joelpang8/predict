@@ -60,7 +60,9 @@ class EdgeRow:
 
     @property
     def label(self) -> str:
-        return f"{self.team} to win" if self.side == "YES" else f"{self.team} not to win ({self.opponent} or tie)"
+        if self.side == "YES":
+            return f"{self.team} to win"
+        return f"{self.team} not to win ({self.opponent} or tie)" if self.sport == "nfl" else f"{self.team} not to win ({self.opponent} wins)"
 
 
 @dataclass(frozen=True)

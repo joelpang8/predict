@@ -161,7 +161,7 @@ def reason_line(p: Pick) -> str:
     if p.liquidity_usd is not None:
         parts.append(f"${p.liquidity_usd:,.0f} at the ask")
     note = r.get("model_note") or ""
-    if "QBs:" in note:
+    if "QBs:" in note or "SPs:" in note:
         parts.append("starters listed")
     if p.penalties:
         parts.append("caution: " + ", ".join(n for n, _ in p.penalties))

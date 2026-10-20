@@ -17,7 +17,7 @@ best-looking opportunities.
 | 4 | Historical data + Elo (NFL first) | done; see docs/model.md |
 | 5 | Trending signals | done; verified live 2026-10-20 |
 | 6 | Streamlit dashboard, Refresh, Top Picks | done; verified live 2026-10-20 |
-| 7 | NBA + MLB, backtesting, CLV | — |
+| 7 | NBA + MLB, backtesting, CLV | done; verified live 2026-10-20 |
 
 What was checked against Kalshi's official sources is in
 [`docs/api-verification.md`](docs/api-verification.md).
@@ -180,6 +180,31 @@ background poller switch. The disclaimer is always at the top.
 
 ![Top Picks](docs/img/top-picks.png)
 ![Market detail](docs/img/market-detail.png)
+
+## Phase 7: NBA, MLB, backtesting, CLV
+
+```bash
+python -m edgefinder history load --sport nba     # nba_api, falls back to Basketball-Reference (~13 min first time)
+python -m edgefinder history load --sport mlb     # MLB Stats API, 2010 to now (~15 s)
+python -m edgefinder refresh --sport nba          # 1 credit per sport per refresh
+python -m edgefinder refresh --sport mlb
+python -m edgefinder backtest model --sport mlb --test 2021-2025
+python -m edgefinder backtest clv                 # CLV of flagged sides and paper bets
+```
+
+- **Series:** `KXNBAGAME` and `KXMLBGAME`. MLB's fee multiplier is 0.5 since
+  2026-08-07, read live from Kalshi.
+- **MLB matching:** tickers carry the Eastern start time, and doubleheaders
+  are `G1`/`G2`. The sportsbook game must start within 20 min of it.
+- **Models:** NBA Elo (NBA-style margin multiplier, back-to-back penalty) and
+  MLB Elo (starting-pitcher ratings). Results are in
+  [`docs/model.md`](docs/model.md).
+- **Odds credits:** the daily budget (`ODDS_DAILY_CREDIT_BUDGET`, default 15)
+  is shared by all sports, at 1 credit per sport per refresh.
+- **CLV:** for every side the app flagged and every paper bet, the price is
+  compared with the sportsbook consensus from our last odds pull before
+  kickoff. It fills in as the app runs over game days, so keep `poll`
+  running near kickoffs.
 
 ## Tests
 

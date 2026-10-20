@@ -1,0 +1,200 @@
+{
+ "copyright": "Copyright 2026 MLB Advanced Media, L.P.  Use of any content on this page acknowledges agreement to the terms posted here http://gdx.mlb.com/components/copyright.txt",
+ "totalItems": 16,
+ "totalEvents": 0,
+ "totalGames": 16,
+ "totalGamesInProgress": 0,
+ "dates": [
+  {
+   "date": "2026-09-04",
+   "totalItems": 16,
+   "totalEvents": 0,
+   "totalGames": 16,
+   "totalGamesInProgress": 0,
+   "games": [
+    {
+     "gamePk": 824424,
+     "gameGuid": "e5580cef-fe4d-4906-869a-2ea583dfe604",
+     "link": "/api/v1.1/game/824424/feed/live",
+     "gameType": "R",
+     "season": "2026",
+     "gameDate": "2026-09-04T18:10:00Z",
+     "officialDate": "2026-09-04",
+     "rescheduledFrom": "2026-06-14T17:40:00Z",
+     "rescheduledFromDate": "2026-06-14",
+     "status": {
+      "abstractGameState": "Final",
+      "codedGameState": "F",
+      "detailedState": "Final",
+      "statusCode": "F",
+      "startTimeTBD": false,
+      "abstractGameCode": "F"
+     },
+     "teams": {
+      "away": {
+       "team": {
+        "id": 116,
+        "name": "Detroit Tigers",
+        "link": "/api/v1/teams/116"
+       },
+       "leagueRecord": {
+        "wins": 64,
+        "losses": 76,
+        "ties": 0,
+        "pct": ".457"
+       },
+       "score": 6,
+       "isWinner": false,
+       "probablePitcher": {
+        "id": 672456,
+        "fullName": "Keider Montero",
+        "link": "/api/v1/people/672456"
+       },
+       "splitSquad": false,
+       "seriesNumber": 46
+      },
+      "home": {
+       "team": {
+        "id": 114,
+        "name": "Cleveland Guardians",
+        "link": "/api/v1/teams/114"
+       },
+       "leagueRecord": {
+        "wins": 71,
+        "losses": 70,
+        "ties": 0,
+        "pct": ".504"
+       },
+       "score": 7,
+       "isWinner": true,
+       "probablePitcher": {
+        "id": 671106,
+        "fullName": "Logan Allen",
+        "link": "/api/v1/people/671106"
+       },
+       "splitSquad": false,
+       "seriesNumber": 46
+      }
+     },
+     "venue": {
+      "id": 5,
+      "name": "Progressive Field",
+      "link": "/api/v1/venues/5"
+     },
+     "content": {
+      "link": "/api/v1/game/824424/content"
+     },
+     "isTie": false,
+     "gameNumber": 1,
+     "publicFacing": true,
+     "doubleHeader": "S",
+     "gamedayType": "P",
+     "tiebreaker": "N",
+     "calendarEventID": "14-824424-2026-09-04",
+     "seasonDisplay": "2026",
+     "dayNight": "day",
+     "description": "Makeup of 6/14 PPD",
+     "scheduledInnings": 9,
+     "reverseHomeAwayStatus": false,
+     "inningBreakLength": 120,
+     "gamesInSeries": 4,
+     "seriesGameNumber": 1,
+     "seriesDescription": "Regular Season",
+     "recordSource": "S",
+     "ifNecessary": "N",
+     "ifNecessaryDescription": "Normal Game"
+    },
+    {
+     "gamePk": 824387,
+     "gameGuid": "dafa79b0-b019-417c-8060-62bf3de4ee81",
+     "link": "/api/v1.1/game/824387/feed/live",
+     "gameType": "R",
+     "season": "2026",
+     "gameDate": "2026-09-04T23:15:00Z",
+     "officialDate": "2026-09-04",
+     "status": {
+      "abstractGameState": "Final",
+      "codedGameState": "F",
+      "detailedState": "Final",
+      "statusCode": "F",
+      "startTimeTBD": false,
+      "abstractGameCode": "F"
+     },
+     "teams": {
+      "away": {
+       "team": {
+        "id": 116,
+        "name": "Detroit Tigers",
+        "link": "/api/v1/teams/116"
+       },
+       "leagueRecord": {
+        "wins": 64,
+        "losses": 77,
+        "ties": 0,
+        "pct": ".454"
+       },
+       "score": 3,
+       "isWinner": false,
+       "probablePitcher": {
+        "id": 808825,
+        "fullName": "Andrew Sears",
+        "link": "/api/v1/people/808825"
+       },
+       "splitSquad": false,
+       "seriesNumber": 46
+      },
+      "home": {
+       "team": {
+        "id": 114,
+        "name": "Cleveland Guardians",
+        "link": "/api/v1/teams/114"
+       },
+       "leagueRecord": {
+        "wins": 72,
+        "losses": 70,
+        "ties": 0,
+        "pct": ".507"
+       },
+       "score": 4,
+       "isWinner": true,
+       "probablePitcher": {
+        "id": 656492,
+        "fullName": "Foster Griffin",
+        "link": "/api/v1/people/656492"
+       },
+       "splitSquad": false,
+       "seriesNumber": 46
+      }
+     },
+     "venue": {
+      "id": 5,
+      "name": "Progressive Field",
+      "link": "/api/v1/venues/5"
+     },
+     "content": {
+      "link": "/api/v1/game/824387/content"
+     },
+     "isTie": false,
+     "gameNumber": 2,
+     "publicFacing": true,
+     "doubleHeader": "S",
+     "gamedayType": "P",
+     "tiebreaker": "N",
+     "calendarEventID": "14-824387-2026-09-04",
+     "seasonDisplay": "2026",
+     "dayNight": "night",
+     "scheduledInnings": 9,
+     "reverseHomeAwayStatus": false,
+     "inningBreakLength": 145,
+     "gamesInSeries": 4,
+     "seriesGameNumber": 2,
+     "seriesDescription": "Regular Season",
+     "recordSource": "S",
+     "ifNecessary": "N",
+     "ifNecessaryDescription": "Normal Game"
+    }
+   ],
+   "events": []
+  }
+ ]
+}

@@ -47,10 +47,14 @@ committed.
   budget, never computes from stale or skewed data, keeps last good results)
 - `edgefinder/jobs/poller.py`: APScheduler poller (faster near kickoff)
 - `edgefinder/paper/ledger.py`: paper bets, settlement (finalized only), stats/CLV
-- `edgefinder/history/`: nflverse loader (nflreadpy; team codes mapped to
-  Kalshi's, relocated franchises merged) and `loader.load` (CLI + nightly job)
-- `edgefinder/models/`: Elo (`elo.py`), evaluation/tuning (`evaluate.py`),
-  `ModelService` (Kalshi game -> one schedule row, else no estimate)
+- `edgefinder/history/`: NFL nflverse (nflreadpy), NBA nba_api with a
+  Basketball-Reference fallback, MLB Stats API (pybaseball's sources are
+  broken: see docs/api-verification.md); `loader.load` (CLI + nightly job)
+- `edgefinder/backtest.py`: model backtest; CLV vs our recorded closing lines
+- `edgefinder/models/`: Elo (`elo.py`; NFL bye, NBA MOV/back-to-back, MLB
+  starter ratings), evaluation/tuning (`evaluate.py`), `ModelService`
+  (Kalshi game -> one schedule row, or start time for doubleheaders; NBA may
+  use the matched odds event's home/away; else no estimate)
 - `edgefinder/signals/trending.py`: line movement (own snapshots first, then
   candlesticks), volume trend, book imbalance, large trades, news/confirming
   flags. Context only: signals never create a pick.

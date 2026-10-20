@@ -11,9 +11,12 @@ skipped and logged with a reason. Rules:
 3. Odds events are candidates only if both team names map to the same two
    codes and the kickoff (`commence_time`), converted to US/Eastern, falls on
    that date.
-4. Kalshi has no kickoff field; its `expected_expiration_time` was kickoff +
-   3h on every NFL game checked. Each candidate's kickoff must fall within a
-   configurable window before it. This is also what separates doubleheaders.
+4. Start time. MLB tickers carry the US/Eastern start time
+   (KXMLBGAME-26OCT272000MILTB = Oct 27, 20:00 ET; doubleheaders add G1/G2):
+   the odds kickoff must be within `START_TOLERANCE` of it. Otherwise (NFL,
+   NBA) Kalshi has no kickoff field; `expected_expiration_time` was kickoff +
+   3h on every game checked, so each candidate's kickoff must fall within a
+   per-sport window before it. Either check also separates doubleheaders.
 5. Exactly one candidate must survive, or the game is ambiguous and skipped.
 """
 
@@ -25,6 +28,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+UTC = ZoneInfo("UTC")
+
 from edgefinder.matching.teams import is_code, team_code
 from edgefinder.sources.kalshi_models import KalshiMarket
 from edgefinder.sources.odds_api import OddsEvent
@@ -32,7 +37,16 @@ from edgefinder.sources.odds_api import OddsEvent
 log = logging.getLogger(__name__)
 ET = ZoneInfo("America/New_York")
 
-_TICKER_RE = re.compile(r"^(?P<series>[A-Z0-9]+)-(?P<date>\d{2}[A-Z]{3}\d{2})(?P<teams>[A-Z]+)$")
+_TICKER_RE = re.compile(
+    r"^(?P<series>[A-Z0-9]+)-(?P<date>\d{2}[A-Z]{3}\d{2})(?P<time>\d{4})?(?P<teams>[A-Z]+?)(?:G(?P<game>\d))?$"
+)
+START_TOLERANCE = timedelta(minutes=20)
+# expected_expiration - kickoff, per sport (observed 3h for NFL and NBA; see docs/api-verification.md)
+KICKOFF_WINDOWS = {
+    "nfl": (timedelta(hours=2), timedelta(hours=5)),
+    "nba": (timedelta(hours=2), timedelta(hours=5)),
+    "mlb": (timedelta(hours=2), timedelta(hours=5)),
+}
 _RULES_DATE_RE = re.compile(r"originally scheduled for ([A-Z][a-z]{2}) (\d{1,2}), (\d{4})")
 _MONTHS = {m: i for i, m in enumerate(["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"], 1)}
 
@@ -44,6 +58,8 @@ class KalshiGame:
     game_date: date  # US/Eastern
     markets: dict[str, KalshiMarket]  # team code -> market whose YES = that team wins
     expected_expiration: datetime | None
+    start: datetime | None = None  # from the ticker when it carries a time (MLB), UTC
+    game_number: int | None = None  # doubleheader G1/G2
 
 
 @dataclass(frozen=True)
@@ -124,8 +140,18 @@ def build_games(sport: str, markets: list[KalshiMarket], report: MatchReport) ->
                 report.skip(ev, "kalshi", f"game date unclear: ticker {tdate}, rules {sorted(map(str, rdates))}")
                 continue
             exps = {m.expected_expiration_time for m in ms}
+            start = None
+            if tm.group("time"):
+                hh, mm = int(tm.group("time")[:2]), int(tm.group("time")[2:])
+                if hh > 23 or mm > 59:
+                    report.skip(ev, "kalshi", f"bad start time in ticker {tm.group('time')!r}")
+                    continue
+                start = datetime(tdate.year, tdate.month, tdate.day, hh, mm, tzinfo=ET).astimezone(UTC)
             games.append(
-                KalshiGame(sport, ev, tdate, codes, exps.pop() if len(exps) == 1 else None)
+                KalshiGame(
+                    sport, ev, tdate, codes, exps.pop() if len(exps) == 1 else None, start,
+                    int(tm.group("game")) if tm.group("game") else None,
+                )
             )
     return games
 
@@ -135,9 +161,10 @@ def match_games(
     games: list[KalshiGame],
     events: list[OddsEvent],
     report: MatchReport,
-    kickoff_window: tuple[timedelta, timedelta] = (timedelta(hours=2), timedelta(hours=5)),
+    kickoff_window: tuple[timedelta, timedelta] | None = None,
 ) -> MatchReport:
-    """kickoff_window: allowed (min, max) of expected_expiration - commence_time."""
+    """kickoff_window: allowed (min, max) of expected_expiration - commence_time (default per sport)."""
+    kickoff_window = kickoff_window or KICKOFF_WINDOWS.get(sport, KICKOFF_WINDOWS["nfl"])
     indexed: list[tuple[frozenset[str], OddsEvent]] = []
     for e in events:
         h, a = team_code(sport, e.home_team), team_code(sport, e.away_team)
@@ -150,19 +177,23 @@ def match_games(
     for g in games:
         pair = frozenset(g.markets)
         cands = [e for p, e in indexed if p == pair and e.commence_time.astimezone(ET).date() == g.game_date]
-        if g.expected_expiration is None:
+        if g.start is not None:
+            timed = [e for e in cands if abs(e.commence_time - g.start) <= START_TOLERANCE]
+            ref = f"Kalshi start {g.start.isoformat()}"
+        elif g.expected_expiration is None:
             report.skip(g.event_ticker, "kalshi", "markets disagree on expected expiration; cannot place kickoff")
             continue
-        lo, hi = kickoff_window
-        timed = [e for e in cands if lo <= g.expected_expiration - e.commence_time <= hi]
+        else:
+            lo, hi = kickoff_window
+            timed = [e for e in cands if lo <= g.expected_expiration - e.commence_time <= hi]
+            ref = f"Kalshi expected expiration {g.expected_expiration.isoformat()}"
         if not cands:
             report.skip(g.event_ticker, "kalshi", f"no odds event for {'/'.join(sorted(pair))} on {g.game_date}")
         elif len(timed) == 0:
             report.skip(
                 g.event_ticker,
                 "kalshi",
-                f"odds kickoff(s) {[e.commence_time.isoformat() for e in cands]} not consistent with "
-                f"Kalshi expected expiration {g.expected_expiration.isoformat()}",
+                f"odds kickoff(s) {[e.commence_time.isoformat() for e in cands]} not consistent with {ref}",
             )
         elif len(timed) > 1:
             report.skip(g.event_ticker, "kalshi", f"ambiguous: {len(timed)} odds events fit (doubleheader?)")
