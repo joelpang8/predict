@@ -19,6 +19,8 @@ best-looking opportunities.
 | 6 | Streamlit dashboard, Refresh, Top Picks | done; verified live 2026-10-20 |
 | 7 | NBA + MLB, backtesting, CLV | done; verified live 2026-10-20 |
 
+**Coming back to this? Start with [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md).**
+
 What was checked against Kalshi's official sources is in
 [`docs/api-verification.md`](docs/api-verification.md).
 
